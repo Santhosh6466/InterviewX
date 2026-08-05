@@ -2,18 +2,29 @@ import axios from 'axios';
 import { toast } from 'react-hot-toast';
 import requestCache from './cache';
 
+const isLanOrLocalhost = (hostname) => {
+  if (!hostname) return true;
+  if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') return true;
+  if (/^192\.168\.\d{1,3}\.\d{1,3}$/.test(hostname)) return true;
+  if (/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname)) return true;
+  if (/^172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}$/.test(hostname)) return true;
+  if (hostname.endsWith('.local')) return true;
+  return false;
+};
+
 const getApiBaseUrl = () => {
+  // If accessing locally or via mobile on the same local Wi-Fi network (192.168.x.x, 10.x.x.x, etc.)
+  if (typeof window !== 'undefined' && isLanOrLocalhost(window.location.hostname)) {
+    const host = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'localhost' : window.location.hostname;
+    return `http://${host}:8080`;
+  }
   if (import.meta.env.VITE_API_BASE_URL) {
     return import.meta.env.VITE_API_BASE_URL;
   }
-  // In production or when hosted on Vercel/mobile, fallback to Railway production backend
-  if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-    return 'https://interviewx.up.railway.app';
-  }
-  return 'http://localhost:8080';
+  return 'https://interviewx.up.railway.app';
 };
 
-const API_BASE_URL = getApiBaseUrl();
+export const API_BASE_URL = getApiBaseUrl();
 
 // Retrieve default Axios adapter
 const defaultAdapter = axios.getAdapter(axios.defaults.adapter || ['xhr', 'http', 'fetch']);

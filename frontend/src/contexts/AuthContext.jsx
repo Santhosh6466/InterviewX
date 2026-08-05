@@ -118,6 +118,14 @@ export const AuthProvider = ({ children }) => {
     setUser(userData);
   }, []);
 
+  const getErrorMessage = (error, defaultMsg) => {
+    if (error?.message === 'Network Error' || error?.code === 'ERR_NETWORK') {
+      return 'Network error: Cannot reach the backend server. Please verify the backend is running and reachable.';
+    }
+    const msg = error?.response?.data?.message || error?.response?.data || error?.message || defaultMsg;
+    return typeof msg === 'string' ? msg : defaultMsg;
+  };
+
   const login = useCallback(async (email, password) => {
     try {
       // Clear any stale registration flags from previous sessions
@@ -145,8 +153,7 @@ export const AuthProvider = ({ children }) => {
         return { success: false, error: 'No authentication token received' };
       }
     } catch (error) {
-      const msg = error.response?.data?.message || error.response?.data || error.message || 'Login failed';
-      return { success: false, error: typeof msg === 'string' ? msg : 'Login failed' };
+      return { success: false, error: getErrorMessage(error, 'Login failed') };
     }
   }, [saveAuthData]);
 
@@ -155,8 +162,7 @@ export const AuthProvider = ({ children }) => {
       await authService.sendOtp(email);
       return { success: true };
     } catch (error) {
-      const msg = error.response?.data?.message || error.response?.data || error.message || 'Failed to send OTP';
-      return { success: false, error: typeof msg === 'string' ? msg : 'Failed to send OTP' };
+      return { success: false, error: getErrorMessage(error, 'Failed to send OTP') };
     }
   }, []);
 
@@ -165,8 +171,7 @@ export const AuthProvider = ({ children }) => {
       await authService.verifyOtp(email, otp);
       return { success: true };
     } catch (error) {
-      const msg = error.response?.data?.message || error.response?.data || error.message || 'Invalid OTP';
-      return { success: false, error: typeof msg === 'string' ? msg : 'Invalid OTP' };
+      return { success: false, error: getErrorMessage(error, 'Invalid OTP') };
     }
   }, []);
 
@@ -193,8 +198,7 @@ export const AuthProvider = ({ children }) => {
         return { success: false, error: 'No authentication token received' };
       }
     } catch (error) {
-      const msg = error.response?.data?.message || error.response?.data || error.message || 'Registration failed';
-      return { success: false, error: typeof msg === 'string' ? msg : 'Registration failed' };
+      return { success: false, error: getErrorMessage(error, 'Registration failed') };
     }
   }, [saveAuthData]);
 
@@ -213,8 +217,7 @@ export const AuthProvider = ({ children }) => {
       saveAuthData(data.token, userData);
       return { success: true, user: userData };
     } catch (error) {
-      const msg = error.response?.data?.message || error.response?.data || error.message || 'Google login failed';
-      return { success: false, error: typeof msg === 'string' ? msg : 'Google login failed' };
+      return { success: false, error: getErrorMessage(error, 'Google login failed') };
     }
   }, [saveAuthData]);
 
