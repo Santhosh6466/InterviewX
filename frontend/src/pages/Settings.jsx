@@ -1,12 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import DashboardLayout from '../layouts/DashboardLayout';
 import { useAuth } from '../contexts/AuthContext';
-import LogoutConfirmModal from '../components/LogoutConfirmModal';
 
 export default function Settings() {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const [isDark, setIsDark] = useState(document.documentElement.classList.contains('dark'));
-  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   useEffect(() => {
     const handleThemeChange = () => setIsDark(document.documentElement.classList.contains('dark'));
@@ -68,38 +66,9 @@ export default function Settings() {
             </div>
           </div>
 
-          {/* Danger Zone Box */}
-          <div className="bg-red-500/5 border border-red-500/10 rounded-sm p-6 md:p-8 flex flex-col gap-6">
-            <h2 className="text-lg font-bold text-red-500 pb-4 border-b border-red-500/10">Danger Zone</h2>
-            
-            <div className="flex items-center justify-between">
-              <div className="flex flex-col gap-1">
-                <h3 className="font-bold text-theme-text">Log Out</h3>
-                <p className="text-xs text-theme-muted">Log out of your account on this device.</p>
-              </div>
-              <button 
-                type="button"
-                onClick={() => setShowLogoutConfirm(true)}
-                className="px-6 py-2.5 bg-red-500 hover:bg-red-600 text-theme-text font-bold text-sm rounded-sm transition-colors shadow-sm flex items-center gap-2 cursor-pointer"
-              >
-                <iconify-icon icon="lucide:log-out"></iconify-icon>
-                Sign Out
-              </button>
-            </div>
-            
-          </div>
-
         </div>
 
       </div>
-      <LogoutConfirmModal 
-        isOpen={showLogoutConfirm}
-        onClose={() => setShowLogoutConfirm(false)}
-        onConfirm={() => {
-          setShowLogoutConfirm(false);
-          logout();
-        }}
-      />
     </DashboardLayout>
   );
 }

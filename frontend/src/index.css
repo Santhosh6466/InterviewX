@@ -31,6 +31,12 @@
 }
 
 @layer base {
+  *, *::before, *::after {
+    transition-property: color, background-color, border-color, text-decoration-color, fill, stroke;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    transition-duration: 200ms;
+  }
+
   /* Aesthetic Warm Light Mode Palette */
   :root {
     --theme-main: #f5f2ec;
@@ -72,9 +78,6 @@
   body {
     background-color: var(--theme-main);
     color: var(--theme-text);
-    transition-property: color, background-color, border-color, text-decoration-color, fill, stroke;
-    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
-    transition-duration: 300ms;
     font-family: 'Satoshi', sans-serif;
     margin: 0;
   }

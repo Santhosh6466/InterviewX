@@ -18,7 +18,7 @@ export default function NotFound() {
         </p>
 
         <div className="flex flex-col items-center gap-4">
-          <a href="#/" className="px-8 py-3 bg-theme-inverted text-theme-inverted-text font-bold rounded-sm hover:opacity-80 transition-colors">
+          <a href="#/dashboard" className="px-8 py-3 bg-theme-inverted text-theme-inverted-text font-bold rounded-sm hover:opacity-80 transition-colors">
             Go Back Home
           </a>
           <a href="#/companies" className="text-sm font-bold text-theme-muted hover:text-theme-text transition-colors">

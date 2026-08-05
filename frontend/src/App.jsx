@@ -10,7 +10,6 @@ import ShareExperience from './pages/ShareExperience';
 import Bookmarks from './pages/Bookmarks';
 import Profile from './pages/Profile';
 import SearchResults from './pages/SearchResults';
-import Settings from './pages/Settings';
 import UpdateProfile from './pages/UpdateProfile';
 import CompleteProfile from './pages/CompleteProfile';
 import PublicProfile from './pages/PublicProfile';
@@ -129,7 +128,10 @@ function App() {
     if (route === '#/profile') return <Profile sidebarTab="Profile" />;
     if (route === '#/contributions') return <MyContributions />;
     if (route === '#/search') return <SearchResults />;
-    if (route === '#/settings') return <Settings />;
+    if (route === '#/settings') {
+      window.location.hash = '#/dashboard';
+      return null;
+    }
     if (route === '#/update-profile') return <UpdateProfile />;
     if (route === '#/complete-profile') return <CompleteProfile />;
     if (route.startsWith('#/users/')) return <PublicProfile />;
