@@ -2,7 +2,18 @@ import axios from 'axios';
 import { toast } from 'react-hot-toast';
 import requestCache from './cache';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
+const getApiBaseUrl = () => {
+  if (import.meta.env.VITE_API_BASE_URL) {
+    return import.meta.env.VITE_API_BASE_URL;
+  }
+  // In production or when hosted on Vercel/mobile, fallback to Railway production backend
+  if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+    return 'https://interviewx.up.railway.app';
+  }
+  return 'http://localhost:8080';
+};
+
+const API_BASE_URL = getApiBaseUrl();
 
 // Retrieve default Axios adapter
 const defaultAdapter = axios.getAdapter(axios.defaults.adapter || ['xhr', 'http', 'fetch']);
