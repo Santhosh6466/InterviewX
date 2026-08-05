@@ -78,9 +78,11 @@ public class GlobalExceptionHandler {
             Exception ex,
             HttpServletRequest request
     ) {
+        ex.printStackTrace();   // <-- Add this
+
         return buildResponse(
                 HttpStatus.INTERNAL_SERVER_ERROR,
-                "Something went wrong",
+                ex.getMessage(),   // Temporarily show the real message
                 request
         );
     }
