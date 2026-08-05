@@ -7,11 +7,38 @@ import EmptyState from '../components/EmptyState';
 import { SkeletonCard } from '../components/Skeleton';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import { toast } from 'react-hot-toast';
+import requestCache from '../services/cache';
+
+const getInitialContributions = (user) => {
+  const cached = requestCache.get('GET', '/api/experiences', { size: 100 }) || requestCache.get('GET', '/api/experiences', { size: '100' });
+  if (cached) {
+    const list = Array.isArray(cached) ? cached : (cached.content || cached.experiences || []);
+    if (user && list.length > 0) {
+      const userIdStr = String(user.id || user._id || '').toLowerCase();
+      const userEmailStr = String(user.email || '').toLowerCase();
+      const userNameStr = String(user.name || user.username || '').toLowerCase();
+
+      return list.filter(exp => {
+        const expUserId = String(exp.userId || exp.user?.id || exp.user?._id || exp.authorId || '').toLowerCase();
+        const expEmail = String(exp.userEmail || exp.user?.email || exp.email || '').toLowerCase();
+        const expAuthor = String(exp.authorName || exp.userName || exp.user?.name || exp.createdByName || '').toLowerCase();
+
+        return (
+          (userIdStr && expUserId && expUserId === userIdStr) ||
+          (userEmailStr && expEmail && expEmail === userEmailStr) ||
+          (userNameStr && expAuthor && expAuthor === userNameStr)
+        );
+      });
+    }
+  }
+  return [];
+};
 
 export default function MyContributions() {
   const { user } = useAuth();
-  const [experiences, setExperiences] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const initialList = getInitialContributions(user);
+  const [experiences, setExperiences] = useState(initialList);
+  const [loading, setLoading] = useState(() => initialList.length === 0 && !requestCache.get('GET', '/api/experiences', { size: 100 }));
   
   // Deletion modal state
   const [selectedDeleteId, setSelectedDeleteId] = useState(null);

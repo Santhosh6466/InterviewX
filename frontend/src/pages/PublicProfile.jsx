@@ -7,6 +7,7 @@ import Avatar from '../components/Avatar';
 import CompanyLogo from '../components/CompanyLogo';
 import { getCareerStatusLabel } from '../constants/enums';
 import { SkeletonDetailCard } from '../components/Skeleton';
+import NotFound from './NotFound';
 
 export default function PublicProfile() {
   const { user } = useAuth();
@@ -99,23 +100,15 @@ export default function PublicProfile() {
     );
   }
 
-  if (error) {
+  if (!loading && (error || !profileData)) {
     return (
-      <DashboardLayout activeTab="Home">
-        <div className="max-w-[800px] mx-auto w-full pt-8">
-          <div className="bg-theme-card border border-red-500/20 rounded-sm p-12 text-center flex flex-col items-center justify-center gap-3">
-            <iconify-icon icon="lucide:alert-circle" className="text-4xl text-red-500"></iconify-icon>
-            <h3 className="text-lg font-bold text-red-500">Failed to load profile</h3>
-            <p className="text-xs text-theme-muted max-w-md">{error}</p>
-            <button 
-              onClick={fetchProfile}
-              className="px-5 py-2 bg-theme-inverted text-theme-inverted-text rounded-sm text-xs font-bold mt-2 hover:opacity-90 transition-opacity"
-            >
-              Retry
-            </button>
-          </div>
-        </div>
-      </DashboardLayout>
+      <NotFound
+        code={error && !error.includes('not found') ? '500' : '404'}
+        title={error && !error.includes('not found') ? 'Server Error' : 'User Profile Not Found'}
+        description={error || "The user profile you're looking for doesn't exist or could not be loaded."}
+        activeTab="Home"
+        onRetry={fetchProfile}
+      />
     );
   }
 

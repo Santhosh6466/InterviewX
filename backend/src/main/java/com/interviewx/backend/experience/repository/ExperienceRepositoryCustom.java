@@ -31,41 +31,39 @@ public class ExperienceRepositoryCustom {
             InterviewType type,
             InterviewResult result,
             Difficulty difficulty,
-            Pageable pageable
-    ){
+            Pageable pageable) {
 
         List<Criteria> criteriaList = new ArrayList<>();
 
-        if(StringUtils.hasText(search)){
+        if (StringUtils.hasText(search)) {
             criteriaList.add(new Criteria().orOperator(
-                    Criteria.where("title").regex(search,"i"),
-                    Criteria.where("role").regex(search,"i")
-            ));
+                    Criteria.where("title").regex(search, "i"),
+                    Criteria.where("role").regex(search, "i")));
         }
 
-        if(StringUtils.hasText(companyId)){
+        if (StringUtils.hasText(companyId)) {
             criteriaList.add(Criteria.where("companyId").is(companyId));
         }
 
-        if(level != null){
+        if (level != null) {
             criteriaList.add(Criteria.where("experienceLevel").is(level));
         }
 
-        if(type != null){
+        if (type != null) {
             criteriaList.add(Criteria.where("interviewType").is(type));
         }
 
-        if(result != null){
+        if (result != null) {
             criteriaList.add(Criteria.where("interviewResult").is(result));
         }
 
-        if(difficulty != null){
+        if (difficulty != null) {
             criteriaList.add(Criteria.where("difficulty").is(difficulty));
         }
 
         Query query = new Query();
 
-        if(!criteriaList.isEmpty()){
+        if (!criteriaList.isEmpty()) {
             query.addCriteria(new Criteria().andOperator(criteriaList));
         }
 
@@ -75,6 +73,6 @@ public class ExperienceRepositoryCustom {
 
         List<Experience> data = mongoTemplate.find(query, Experience.class);
 
-        return new PageImpl<>(data,pageable,total);
+        return new PageImpl<>(data, pageable, total);
     }
 }

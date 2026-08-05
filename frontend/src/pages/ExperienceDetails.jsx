@@ -22,6 +22,7 @@ import BookmarkButton from '../components/BookmarkButton';
 import StatusChip from '../components/StatusChip';
 import AttributePill from '../components/AttributePill';
 import DifficultyIndicator from '../components/DifficultyIndicator';
+import NotFound from './NotFound';
 
 const ROUND_TYPE_CONFIG = {
   ONLINE_ASSESSMENT: { icon: 'lucide:laptop', border: 'border-l-indigo-500', iconBg: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400' },
@@ -165,26 +166,13 @@ export default function ExperienceDetails() {
         const sorted = realRounds.sort((a, b) => (a.roundNumber || 0) - (b.roundNumber || 0));
         setRounds(sorted);
       } else {
-        // Fallback
-        setExperience({
-          id: id,
-          title: 'Software Engineer Intern',
-          role: 'Software Engineer Intern',
-          result: 'SELECTED',
-          difficulty: 'MEDIUM',
-          interviewDate: 'Jun 2024',
-          interviewType: 'ONLINE',
-          experienceLevel: 'FRESHER',
-          location: 'Bangalore',
-          company: { name: 'Google', logoUrl: '', rating: 4.4 },
-          authorName: 'Rahul Kumar',
-          authorRole: 'SDE Intern at Google'
-        });
-        setRounds(DEFAULT_ROUNDS);
+        setExperience(null);
+        setError('The requested interview experience could not be found.');
       }
     } catch (err) {
       console.warn('[ExperienceDetails] Error fetching experience details:', err);
-      setError(err.message || 'Failed to load experience details');
+      setError(err.response?.data?.message || err.message || 'Failed to load experience details');
+      setExperience(null);
     } finally {
       setLoading(false);
     }
@@ -214,6 +202,18 @@ export default function ExperienceDetails() {
           <SkeletonDetailCard />
         </div>
       </DashboardLayout>
+    );
+  }
+
+  if (!loading && (!experience || error)) {
+    return (
+      <NotFound
+        code={error && !error.includes('not be found') ? '500' : '404'}
+        title={error && !error.includes('not be found') ? 'Server Error' : 'Experience Not Found'}
+        description={error || "The interview experience you're looking for doesn't exist or has been removed."}
+        activeTab="Experiences"
+        onRetry={() => fetchExperienceDetails(getExperienceIdFromHash())}
+      />
     );
   }
 

@@ -5,10 +5,30 @@ import CompanyLogo from '../components/CompanyLogo';
 import BookmarkButton from '../components/BookmarkButton';
 import { SkeletonCard } from '../components/Skeleton';
 import { toast } from 'react-hot-toast';
+import requestCache from '../services/cache';
+
+const getInitialBookmarks = () => {
+  const cached = requestCache.get('GET', '/users/me/bookmarks');
+  if (Array.isArray(cached) && cached.length > 0) {
+    const sample = cached[0];
+    if (sample.company || sample.companyName || sample.role || sample.title) {
+      return cached.map(item => ({ ...item, bookmarked: true }));
+    }
+    if (sample.experience) {
+      return cached.map(item => ({
+        ...item.experience,
+        bookmarkId: item.id,
+        bookmarked: true
+      }));
+    }
+  }
+  return [];
+};
 
 export default function Bookmarks() {
-  const [bookmarks, setBookmarks] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const initialList = getInitialBookmarks();
+  const [bookmarks, setBookmarks] = useState(initialList);
+  const [loading, setLoading] = useState(() => initialList.length === 0 && !requestCache.get('GET', '/users/me/bookmarks'));
 
   useEffect(() => {
     fetchBookmarks();

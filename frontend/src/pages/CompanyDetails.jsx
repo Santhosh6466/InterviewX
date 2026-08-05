@@ -11,6 +11,7 @@ import StatusChip from '../components/StatusChip';
 import AttributePill from '../components/AttributePill';
 import DifficultyIndicator from '../components/DifficultyIndicator';
 import ExperienceRow from '../components/ExperienceRow';
+import NotFound from './NotFound';
 
 // In-memory cache for company details and experiences
 const companyDetailsCache = new Map();
@@ -163,6 +164,18 @@ export default function CompanyDetails() {
     { id: 'Interviews', label: `Interviews (${company?.interviews ?? company?.exp ?? experiences.length})` },
     { id: 'Salaries', label: `Salaries (${company?.salaries ?? 0})` }
   ];
+
+  if (!loading && (!company || error)) {
+    return (
+      <NotFound
+        code={error ? '500' : '404'}
+        title={error ? 'Server Error' : 'Company Not Found'}
+        description={error || "The company you're looking for doesn't exist or could not be found."}
+        activeTab="Companies"
+        onRetry={() => fetchData(getCompanyIdFromHash())}
+      />
+    );
+  }
 
   return (
     <DashboardLayout activeTab="Companies">

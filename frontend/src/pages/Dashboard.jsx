@@ -78,12 +78,42 @@ const getRoundIcon = (tag) => {
   return 'lucide:file-text';
 };
 
+import requestCache from '../services/cache';
+
+const getInitialDashboardCompanies = () => {
+  const cached = requestCache.get('GET', '/api/companies');
+  if (Array.isArray(cached) && cached.length > 0) {
+    const withExperiences = cached.filter(c => (c.interviews ?? c.exp ?? c.experienceCount ?? 0) > 0);
+    return withExperiences.length > 0 ? withExperiences.slice(0, 6) : cached.slice(0, 6);
+  }
+  return [];
+};
+
+const getInitialDashboardExperiences = () => {
+  const cachedExp = requestCache.get('GET', '/api/experiences', { page: '0', size: '10' }) || requestCache.get('GET', '/api/experiences?page=0&size=10');
+  const cachedBookmarks = requestCache.get('GET', '/users/me/bookmarks');
+  if (cachedExp) {
+    const bookmarkIds = new Set(
+      (Array.isArray(cachedBookmarks) ? cachedBookmarks : []).map(b => String(b.experienceId || b.id))
+    );
+    const list = Array.isArray(cachedExp) ? cachedExp : (cachedExp?.content || cachedExp?.experiences || []);
+    if (list.length > 0) {
+      return list.map((exp) => ({
+        ...exp,
+        bookmarked: bookmarkIds.has(String(exp.id || exp._id)),
+        comments: exp.commentsCount ?? exp.commentCount ?? (Array.isArray(exp.comments) ? exp.comments.length : 0)
+      }));
+    }
+  }
+  return [];
+};
+
 export default function Dashboard() {
   const { user } = useAuth();
-  const [companies, setCompanies] = useState([]);
-  const [experiences, setExperiences] = useState([]);
-  const [loadingCompanies, setLoadingCompanies] = useState(true);
-  const [loadingExperiences, setLoadingExperiences] = useState(true);
+  const [companies, setCompanies] = useState(getInitialDashboardCompanies);
+  const [experiences, setExperiences] = useState(getInitialDashboardExperiences);
+  const [loadingCompanies, setLoadingCompanies] = useState(() => getInitialDashboardCompanies().length === 0);
+  const [loadingExperiences, setLoadingExperiences] = useState(() => getInitialDashboardExperiences().length === 0);
   const [page, setPage] = useState(0);
 
   useEffect(() => {
@@ -91,66 +121,53 @@ export default function Dashboard() {
   }, [page]);
 
   const fetchData = async () => {
-    // Fetch companies
-    try {
-      setLoadingCompanies(true);
-      const companyData = await companyService.getAllCompanies();
-      if (Array.isArray(companyData)) {
-        // Filter out companies with 0 experiences
-        const withExperiences = companyData.filter(c => (c.interviews ?? c.exp ?? c.experienceCount ?? 0) > 0);
-        if (withExperiences.length > 0) {
-          setCompanies(withExperiences.slice(0, 6));
-        } else {
-          setCompanies(companyData.slice(0, 6));
-        }
-      } else {
-        setCompanies(DEFAULT_TRENDING);
-      }
-    } catch (err) {
-      console.warn('[Dashboard] Error fetching companies:', err);
-      setCompanies(DEFAULT_TRENDING);
-    } finally {
-      setLoadingCompanies(false);
-    }
-
-    // Fetch experiences
-    try {
-      setLoadingExperiences(true);
-      
-      let bookmarkIds = new Set();
+    // Run company fetching and experience fetching concurrently
+    const fetchCompaniesTask = async () => {
       try {
-        const bookmarks = await experienceService.getMyBookmarks();
-        const bList = Array.isArray(bookmarks) ? bookmarks : [];
-        bookmarkIds = new Set(bList.map(b => String(b.experienceId || b.id)));
-      } catch (bookmarkErr) {
-        console.warn('[Dashboard] Error fetching bookmarks:', bookmarkErr);
-      }
-
-      const expData = await experienceService.getAllExperiences(page, 10);
-      const list = Array.isArray(expData) ? expData : (expData?.content || expData?.experiences || []);
-      
-      const processedList = await Promise.all(list.map(async (exp) => {
-        let commentsCount = 0;
-        try {
-          const comments = await commentService.getComments(exp.id || exp._id);
-          commentsCount = Array.isArray(comments) ? comments.length : 0;
-        } catch (commentErr) {
-          console.warn(`Failed to fetch comments for experience ${exp.id}:`, commentErr);
+        const companyData = await companyService.getAllCompanies();
+        if (Array.isArray(companyData)) {
+          const withExperiences = companyData.filter(c => (c.interviews ?? c.exp ?? c.experienceCount ?? 0) > 0);
+          setCompanies(withExperiences.length > 0 ? withExperiences.slice(0, 6) : companyData.slice(0, 6));
+        } else {
+          setCompanies(DEFAULT_TRENDING);
         }
-        return {
+      } catch (err) {
+        console.warn('[Dashboard] Error fetching companies:', err);
+        setCompanies(DEFAULT_TRENDING);
+      } finally {
+        setLoadingCompanies(false);
+      }
+    };
+
+    const fetchExperiencesTask = async () => {
+      try {
+        const [bookmarksRes, expData] = await Promise.all([
+          experienceService.getMyBookmarks().catch(() => []),
+          experienceService.getAllExperiences(page, 10)
+        ]);
+
+        const bookmarkIds = new Set(
+          (Array.isArray(bookmarksRes) ? bookmarksRes : []).map(b => String(b.experienceId || b.id))
+        );
+
+        const list = Array.isArray(expData) ? expData : (expData?.content || expData?.experiences || []);
+        
+        const processedList = list.map((exp) => ({
           ...exp,
           bookmarked: bookmarkIds.has(String(exp.id || exp._id)),
-          comments: commentsCount
-        };
-      }));
+          comments: exp.commentsCount ?? exp.commentCount ?? (Array.isArray(exp.comments) ? exp.comments.length : 0)
+        }));
 
-      setExperiences(processedList);
-    } catch (err) {
-      console.warn('[Dashboard] Error fetching experiences:', err);
-      setExperiences(DEFAULT_EXPERIENCES);
-    } finally {
-      setLoadingExperiences(false);
-    }
+        setExperiences(processedList);
+      } catch (err) {
+        console.warn('[Dashboard] Error fetching experiences:', err);
+        setExperiences(DEFAULT_EXPERIENCES);
+      } finally {
+        setLoadingExperiences(false);
+      }
+    };
+
+    await Promise.all([fetchCompaniesTask(), fetchExperiencesTask()]);
   };
 
   return (

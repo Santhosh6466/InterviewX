@@ -53,15 +53,33 @@ function CompanyCard({ company }) {
   );
 }
 
+import requestCache from '../services/cache';
+
+const getInitialCompaniesList = () => {
+  const cachedSearch = requestCache.get('GET', '/api/companies/search', { page: 0, size: 24 }) || requestCache.get('GET', '/api/companies/search', { page: '0', size: '24' });
+  if (cachedSearch) {
+    const list = Array.isArray(cachedSearch.content) ? cachedSearch.content : (Array.isArray(cachedSearch) ? cachedSearch : []);
+    if (list.length > 0) return list;
+  }
+  const cachedAll = requestCache.get('GET', '/api/companies');
+  if (Array.isArray(cachedAll) && cachedAll.length > 0) {
+    return cachedAll;
+  }
+  return [];
+};
+
 export default function Companies() {
-  const [companies, setCompanies] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const initialItems = getInitialCompaniesList();
+  const [companies, setCompanies] = useState(initialItems);
+  const [loading, setLoading] = useState(() => initialItems.length === 0);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [page, setPage] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
-  const [totalElements, setTotalElements] = useState(0);
+  const [totalElements, setTotalElements] = useState(() => initialItems.length);
+
+  const isInitialMount = useRef(true);
 
   // Controller ref for Axios request cancellation
   const abortControllerRef = useRef(null);
@@ -76,6 +94,11 @@ export default function Companies() {
 
   // Initial load / search change
   useEffect(() => {
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      fetchCompanies(searchQuery, 0, initialItems.length === 0);
+      return;
+    }
     setPage(0);
     setCompanies([]);
     fetchCompanies(searchQuery, 0, true);

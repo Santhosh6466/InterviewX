@@ -79,7 +79,14 @@ export const AuthProvider = ({ children }) => {
       }
     } catch (err) {
       console.warn('[AuthContext] Error fetching profile status:', err);
-      setProfileCompleted(false);
+      // Only mark profile as incomplete if 404 Not Found (meaning profile is not created yet)
+      // For any 500 server error, network timeout, or connection error, do NOT force user to update-profile
+      if (err.response && err.response.status === 404) {
+        setProfileCompleted(false);
+      } else {
+        // Fallback to true so the user is not kicked to the update-profile page on server errors
+        setProfileCompleted(true);
+      }
     } finally {
       setLoadingProfile(false);
     }

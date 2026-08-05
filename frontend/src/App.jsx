@@ -17,6 +17,7 @@ import Notifications from './pages/Notifications';
 import NotFound from './pages/NotFound';
 import MyContributions from './pages/MyContributions';
 import PageLoader from './components/PageLoader';
+import ErrorBoundary from './components/ErrorBoundary';
 import { useAuth } from './contexts/AuthContext';
 
 function App() {
@@ -145,7 +146,9 @@ function App() {
       <PageLoader isLoading={isAppLoading} />
       {!isAppLoading && (
         <div key={route} className="page-transition min-h-screen">
-          {renderContent()}
+          <ErrorBoundary key={route}>
+            {renderContent()}
+          </ErrorBoundary>
         </div>
       )}
     </>
