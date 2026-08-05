@@ -68,8 +68,12 @@ public class CompanyService {
 
         Pageable pageable = PageRequest.of(page, size);
 
-        Page<Company> companies =
-                companyRepository.findByNameContainingIgnoreCase(query, pageable);
+        Page<Company> companies;
+        if (query == null || query.trim().isEmpty()) {
+            companies = companyRepository.findAll(pageable);
+        } else {
+            companies = companyRepository.findByNameContainingIgnoreCase(query.trim(), pageable);
+        }
 
         return companies.map(this::mapToResponse);
     }

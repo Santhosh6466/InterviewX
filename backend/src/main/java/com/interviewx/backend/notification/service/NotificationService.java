@@ -11,6 +11,7 @@ import com.interviewx.backend.notification.enums.NotificationType;
 import com.interviewx.backend.notification.repository.NotificationRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.scheduling.annotation.Async;
@@ -19,7 +20,8 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
-import java.util.List;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -43,6 +45,7 @@ public class NotificationService {
                 .type(NotificationType.LIKE)
                 .message(senderName + " liked your interview experience.")
                 .read(false)
+                .createdAt(LocalDateTime.now())
                 .build();
 
         notificationRepository.save(notification);
@@ -63,6 +66,7 @@ public class NotificationService {
                 .type(NotificationType.COMMENT)
                 .message(senderName + " commented on your interview experience.")
                 .read(false)
+                .createdAt(LocalDateTime.now())
                 .build();
 
         notificationRepository.save(notification);
@@ -71,33 +75,47 @@ public class NotificationService {
     public Page<NotificationResponse> getNotifications(int page, int size) {
 
         User currentUser = getCurrentUser();
-
         Pageable pageable = PageRequest.of(page, size);
 
-        return notificationRepository
-                .findByReceiverIdOrderByCreatedAtDesc(currentUser.getId(), pageable)
-                .map(this::mapToResponse);
-    }
+        Page<Notification> notificationPage = notificationRepository
+                .findByReceiverIdOrderByCreatedAtDesc(currentUser.getId(), pageable);
 
-    private NotificationResponse mapToResponse(Notification notification) {
+        List<Notification> notifications = notificationPage.getContent();
+        if (notifications.isEmpty()) {
+            return new PageImpl<>(Collections.emptyList(), pageable, notificationPage.getTotalElements());
+        }
 
-        User sender = userRepository.findById(notification.getSenderId())
-                .orElseThrow(() -> new RuntimeException("Sender not found"));
+        List<String> senderIds = notifications.stream()
+                .map(Notification::getSenderId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
 
-        String seed = sender.getAvatarSeed() != null ? sender.getAvatarSeed() : "default-avatar";
+        Map<String, User> userMap = senderIds.isEmpty() ? Collections.emptyMap()
+                : userRepository.findAllById(senderIds).stream()
+                        .collect(Collectors.toMap(User::getId, u -> u, (a, b) -> a));
 
-        return NotificationResponse.builder()
-                .id(notification.getId())
-                .senderId(sender.getId())
-                .senderName(sender.getName())
-                .senderProfilePicture(sender.getProfilePicture())
-                .senderAvatarSeed(seed)
-                .experienceId(notification.getExperienceId())
-                .type(notification.getType())
-                .message(notification.getMessage())
-                .read(notification.isRead())
-                .createdAt(notification.getCreatedAt())
-                .build();
+        List<NotificationResponse> responses = notifications.stream().map(notification -> {
+            User sender = notification.getSenderId() != null ? userMap.get(notification.getSenderId()) : null;
+            String senderName = sender != null ? sender.getName() : "User";
+            String senderProfilePicture = sender != null ? sender.getProfilePicture() : null;
+            String seed = (sender != null && sender.getAvatarSeed() != null) ? sender.getAvatarSeed() : "default-avatar";
+
+            return NotificationResponse.builder()
+                    .id(notification.getId())
+                    .senderId(notification.getSenderId())
+                    .senderName(senderName)
+                    .senderProfilePicture(senderProfilePicture)
+                    .senderAvatarSeed(seed)
+                    .experienceId(notification.getExperienceId())
+                    .type(notification.getType())
+                    .message(notification.getMessage())
+                    .read(notification.isRead())
+                    .createdAt(notification.getCreatedAt())
+                    .build();
+        }).toList();
+
+        return new PageImpl<>(responses, pageable, notificationPage.getTotalElements());
     }
 
     private User getCurrentUser() {
@@ -108,7 +126,7 @@ public class NotificationService {
         String email = authentication.getName();
 
         return userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
     }
 
     public UnreadCountResponse getUnreadCount() {

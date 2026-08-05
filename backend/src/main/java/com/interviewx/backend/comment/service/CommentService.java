@@ -18,7 +18,8 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
-import java.util.List;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -50,11 +51,7 @@ public class CommentService {
 
         commentRepository.save(comment);
 
-
-        commentRepository.save(comment);
-
         if (!experience.getUserId().equals(user.getId())) {
-
             notificationService.createCommentNotification(
                     experience.getUserId(),
                     user.getId(),
@@ -63,38 +60,59 @@ public class CommentService {
             );
         }
 
-        return mapToResponse(comment);
-
-
+        return mapCommentToResponse(comment, Collections.singletonMap(user.getId(), user));
     }
 
-    // Get all comments for an experience
+    // Get all comments for an experience (optimized in 2 queries total)
     public List<CommentResponse> getCommentsByExperience(String experienceId) {
 
         experienceRepository.findById(experienceId)
                 .orElseThrow(() -> new ResourceNotFoundException("Experience not found"));
 
-        List<Comment> rootComments =
-                commentRepository.findByExperienceIdAndParentCommentIdIsNullOrderByCreatedAtDesc(experienceId);
+        List<Comment> allComments = commentRepository.findByExperienceIdOrderByCreatedAtDesc(experienceId);
+
+        if (allComments == null || allComments.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<String> userIds = allComments.stream()
+                .map(Comment::getUserId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+
+        Map<String, User> userMap = userIds.isEmpty() ? Collections.emptyMap()
+                : userRepository.findAllById(userIds).stream()
+                        .collect(Collectors.toMap(User::getId, u -> u, (a, b) -> a));
+
+        // Group replies by parentCommentId and sort them ascending by createdAt
+        Map<String, List<Comment>> repliesByParent = allComments.stream()
+                .filter(c -> c.getParentCommentId() != null)
+                .collect(Collectors.groupingBy(Comment::getParentCommentId));
+
+        // Root comments (parentCommentId == null) ordered descending by createdAt
+        List<Comment> rootComments = allComments.stream()
+                .filter(c -> c.getParentCommentId() == null)
+                .toList();
 
         return rootComments.stream().map(comment -> {
+            CommentResponse response = mapCommentToResponse(comment, userMap);
 
-            // Convert root comment
-            CommentResponse response = mapToResponse(comment);
-
-            // Fetch replies
-            List<CommentResponse> replies = commentRepository
-                    .findByParentCommentIdOrderByCreatedAtAsc(comment.getId())
-                    .stream()
-                    .map(this::mapToResponse)
+            List<Comment> replies = repliesByParent.getOrDefault(comment.getId(), Collections.emptyList()).stream()
+                    .sorted((a, b) -> {
+                        if (a.getCreatedAt() == null || b.getCreatedAt() == null) return 0;
+                        return a.getCreatedAt().compareTo(b.getCreatedAt());
+                    })
                     .toList();
 
-            // Attach replies
-            response.setReplies(replies);
-            response.setReplyCount(replies.size());
+            List<CommentResponse> replyResponses = replies.stream()
+                    .map(reply -> mapCommentToResponse(reply, userMap))
+                    .toList();
+
+            response.setReplies(replyResponses);
+            response.setReplyCount(replyResponses.size());
 
             return response;
-
         }).toList();
     }
 
@@ -120,7 +138,7 @@ public class CommentService {
 
         commentRepository.save(comment);
 
-        return mapToResponse(comment);
+        return mapCommentToResponse(comment, Collections.singletonMap(user.getId(), user));
     }
 
     public void deleteComment(String commentId) {
@@ -144,26 +162,6 @@ public class CommentService {
         }
 
         commentRepository.delete(comment);
-    }
-
-    private CommentResponse mapToResponse(Comment comment) {
-
-        User user = userRepository.findById(comment.getUserId())
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-
-        String seed = user.getAvatarSeed() != null ? user.getAvatarSeed() : "default-avatar";
-
-        return CommentResponse.builder()
-                .id(comment.getId())
-                .userId(user.getId())
-                .authorName(user.getName())
-                .authorProfilePicture(user.getProfilePicture())
-                .authorAvatarSeed(seed)
-                .avatarSeed(seed)
-                .content(comment.getContent())
-                .createdAt(comment.getCreatedAt())
-                .updatedAt(comment.getUpdatedAt())
-                .build();
     }
 
     public CommentResponse replyToComment(CreateReplyRequest request) {
@@ -190,8 +188,8 @@ public class CommentService {
                 .build();
 
         commentRepository.save(reply);
-        if (!parentComment.getUserId().equals(user.getId())) {
 
+        if (!parentComment.getUserId().equals(user.getId())) {
             notificationService.createCommentReplyNotification(
                     parentComment.getUserId(),   // receiver
                     user.getId(),                // sender
@@ -200,7 +198,25 @@ public class CommentService {
             );
         }
 
-        return mapToResponse(reply);
+        return mapCommentToResponse(reply, Collections.singletonMap(user.getId(), user));
+    }
+
+    private CommentResponse mapCommentToResponse(Comment comment, Map<String, User> userMap) {
+        User user = comment.getUserId() != null ? userMap.get(comment.getUserId()) : null;
+        String name = user != null ? user.getName() : "Anonymous User";
+        String profilePic = user != null ? user.getProfilePicture() : null;
+        String seed = (user != null && user.getAvatarSeed() != null) ? user.getAvatarSeed() : "default-avatar";
+
+        return CommentResponse.builder()
+                .id(comment.getId())
+                .userId(comment.getUserId())
+                .authorName(name)
+                .authorProfilePicture(profilePic)
+                .authorAvatarSeed(seed)
+                .avatarSeed(seed)
+                .content(comment.getContent())
+                .createdAt(comment.getCreatedAt())
+                .updatedAt(comment.getUpdatedAt())
+                .build();
     }
 }
-

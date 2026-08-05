@@ -1,8 +1,11 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import DashboardLayout from '../layouts/DashboardLayout';
 import companyService from '../services/companyService';
 import { SkeletonCompanyCard } from '../components/Skeleton';
 import CompanyLogo from '../components/CompanyLogo';
+import requestCache from '../services/cache';
+
+const PAGE_SIZE = 16;
 
 function CompanyCard({ company }) {
   const companyId = company.id || company._id || company.name.toLowerCase();
@@ -53,64 +56,40 @@ function CompanyCard({ company }) {
   );
 }
 
-import requestCache from '../services/cache';
-
-const getInitialCompaniesList = () => {
-  const cachedSearch = requestCache.get('GET', '/api/companies/search', { page: 0, size: 24 }) || requestCache.get('GET', '/api/companies/search', { page: '0', size: '24' });
-  if (cachedSearch) {
-    const list = Array.isArray(cachedSearch.content) ? cachedSearch.content : (Array.isArray(cachedSearch) ? cachedSearch : []);
-    if (list.length > 0) return list;
-  }
-  const cachedAll = requestCache.get('GET', '/api/companies');
-  if (Array.isArray(cachedAll) && cachedAll.length > 0) {
-    return cachedAll;
-  }
-  return [];
-};
-
 export default function Companies() {
-  const initialItems = getInitialCompaniesList();
-  const [companies, setCompanies] = useState(initialItems);
-  const [loading, setLoading] = useState(() => initialItems.length === 0);
+  const [allCompaniesPool, setAllCompaniesPool] = useState([]);
+  const [displayedCompanies, setDisplayedCompanies] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [page, setPage] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
-  const [totalElements, setTotalElements] = useState(() => initialItems.length);
+  const [totalElements, setTotalElements] = useState(0);
 
-  const isInitialMount = useRef(true);
-
-  // Controller ref for Axios request cancellation
+  const isFetchingRef = useRef(false);
   const abortControllerRef = useRef(null);
   const sentinelRef = useRef(null);
-  const observerRef = useRef(null);
 
-  // Track latest state for observer
-  const stateRef = useRef({ page, totalPages, loading, loadingMore, searchQuery });
+  // Sync ref for event handlers & observer
+  const stateRef = useRef({ page, totalPages, loading, loadingMore, searchQuery, allCompaniesPool });
   useEffect(() => {
-    stateRef.current = { page, totalPages, loading, loadingMore, searchQuery };
-  }, [page, totalPages, loading, loadingMore, searchQuery]);
+    stateRef.current = { page, totalPages, loading, loadingMore, searchQuery, allCompaniesPool };
+  }, [page, totalPages, loading, loadingMore, searchQuery, allCompaniesPool]);
 
-  // Initial load / search change
-  useEffect(() => {
-    if (isInitialMount.current) {
-      isInitialMount.current = false;
-      fetchCompanies(searchQuery, 0, initialItems.length === 0);
+  // Master fetch function supporting both server pagination and full pool chunking
+  const loadPageData = useCallback(async (query, targetPage, isFresh = false) => {
+    if (isFetchingRef.current && !isFresh) {
       return;
     }
-    setPage(0);
-    setCompanies([]);
-    fetchCompanies(searchQuery, 0, true);
-  }, [searchQuery]);
 
-  const fetchCompanies = async (query, targetPage, isFresh = false) => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
     abortControllerRef.current = new AbortController();
 
     try {
+      isFetchingRef.current = true;
       if (isFresh) {
         setLoading(true);
       } else {
@@ -118,112 +97,204 @@ export default function Companies() {
       }
       setError('');
 
-      const res = await companyService.searchCompanies(
-        query, 
-        targetPage, 
-        24, 
-        abortControllerRef.current.signal
-      );
-
-      let newItems = [];
-      let totalP = 1;
-      let totalE = 0;
-
-      if (res && Array.isArray(res.content)) {
-        newItems = res.content;
-        totalP = res.totalPages || 1;
-        totalE = res.totalElements || res.content.length;
-      } else if (Array.isArray(res)) {
-        newItems = res;
-        totalP = 1;
-        totalE = res.length;
+      // 1. Try paginated search
+      let searchRes = null;
+      try {
+        searchRes = await companyService.searchCompanies(
+          query,
+          targetPage,
+          PAGE_SIZE,
+          abortControllerRef.current.signal
+        );
+      } catch (e) {
+        if (e.name === 'CanceledError' || e.name === 'AbortError' || e.code === 'ERR_CANCELED') return;
       }
 
-      setTotalPages(totalP);
-      setTotalElements(totalE);
-      setPage(targetPage);
+      // If search returned multiple pages or matching content
+      if (searchRes && Array.isArray(searchRes.content) && searchRes.content.length > 0) {
+        const newItems = searchRes.content;
+        const totalP = searchRes.totalPages || Math.ceil((searchRes.totalElements || newItems.length) / PAGE_SIZE);
+        const totalE = searchRes.totalElements || newItems.length;
 
-      if (isFresh) {
-        setCompanies(newItems);
-      } else {
-        setCompanies(prev => {
-          const existingIds = new Set(prev.map(c => String(c.id || c._id || c.name)));
-          const uniqueNew = newItems.filter(c => !existingIds.has(String(c.id || c._id || c.name)));
-          return [...prev, ...uniqueNew];
-        });
+        // If backend total is 24 or 1 page, also fetch full pool in background to enable infinite scrolling of more companies
+        if (totalP <= 1 && (!query || query.trim() === '')) {
+          try {
+            const allRes = await companyService.getAllCompanies();
+            if (Array.isArray(allRes) && allRes.length > newItems.length) {
+              setAllCompaniesPool(allRes);
+              const computedPages = Math.ceil(allRes.length / PAGE_SIZE);
+              setTotalPages(computedPages);
+              setTotalElements(allRes.length);
+              setPage(0);
+              setDisplayedCompanies(allRes.slice(0, PAGE_SIZE));
+              return;
+            }
+          } catch (_) {}
+        }
+
+        setTotalPages(totalP);
+        setTotalElements(totalE);
+        setPage(targetPage);
+
+        if (isFresh || targetPage === 0) {
+          setDisplayedCompanies(newItems);
+        } else {
+          setDisplayedCompanies(prev => {
+            const seen = new Set(prev.map(c => String(c.id || c._id || c.name)));
+            const unique = newItems.filter(c => !seen.has(String(c.id || c._id || c.name)));
+            return [...prev, ...unique];
+          });
+        }
+        return;
       }
+
+      // 2. Fallback: If search returned plain array or pool mode
+      if (Array.isArray(searchRes) && searchRes.length > 0) {
+        const totalP = Math.ceil(searchRes.length / PAGE_SIZE);
+        setAllCompaniesPool(searchRes);
+        setTotalPages(totalP);
+        setTotalElements(searchRes.length);
+        setPage(targetPage);
+
+        const sliced = searchRes.slice(0, (targetPage + 1) * PAGE_SIZE);
+        setDisplayedCompanies(sliced);
+        return;
+      }
+
+      // 3. Fallback: Query all companies if search was empty or failed
+      const allRes = await companyService.getAllCompanies();
+      if (Array.isArray(allRes) && allRes.length > 0) {
+        let filtered = allRes;
+        if (query && query.trim() !== '') {
+          const q = query.trim().toLowerCase();
+          filtered = allRes.filter(c => c.name?.toLowerCase().includes(q) || c.description?.toLowerCase().includes(q));
+        }
+
+        setAllCompaniesPool(filtered);
+        const totalP = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+        setTotalPages(totalP);
+        setTotalElements(filtered.length);
+        setPage(targetPage);
+
+        const sliced = filtered.slice(0, (targetPage + 1) * PAGE_SIZE);
+        setDisplayedCompanies(sliced);
+        return;
+      }
+
+      // Empty result
+      setDisplayedCompanies([]);
+      setTotalPages(1);
+      setTotalElements(0);
     } catch (err) {
       if (err.name === 'CanceledError' || err.name === 'AbortError' || err.code === 'ERR_CANCELED') {
         return;
       }
-      console.warn('[Companies] Error searching companies:', err);
+      console.warn('[Companies] Error fetching companies:', err);
       if (isFresh) {
         setError(err.response?.data?.message || 'Failed to load companies');
-        setCompanies([]);
+        setDisplayedCompanies([]);
       }
     } finally {
+      isFetchingRef.current = false;
       setLoading(false);
       setLoadingMore(false);
     }
-  };
+  }, []);
 
-  // Auto-fill viewport if content doesn't overflow yet
+  // Initial load & search input change with debounce
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setPage(0);
+      loadPageData(searchQuery, 0, true);
+    }, 200);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery, loadPageData]);
+
+  // Load next page trigger
+  const triggerNextPage = useCallback(() => {
+    const { page: currPage, totalPages: maxPages, loading: isLoading, loadingMore: isLoadingMore, searchQuery: currentQuery, allCompaniesPool: pool } = stateRef.current;
+    
+    if (isLoading || isLoadingMore || isFetchingRef.current) return;
+    if (currPage + 1 >= maxPages) return;
+
+    // If we have a cached pool of all companies, slice next batch instantly
+    if (pool && pool.length > 0) {
+      const nextPage = currPage + 1;
+      const nextBatch = pool.slice(0, (nextPage + 1) * PAGE_SIZE);
+      setPage(nextPage);
+      setDisplayedCompanies(nextBatch);
+      return;
+    }
+
+    // Otherwise fetch next page from server
+    loadPageData(currentQuery, currPage + 1, false);
+  }, [loadPageData]);
+
+  // Auto-fill tall viewports
   useEffect(() => {
     if (!loading && !loadingMore && page + 1 < totalPages) {
       const mainEl = document.querySelector('main');
-      if (mainEl && mainEl.scrollHeight <= mainEl.clientHeight + 100) {
-        fetchCompanies(searchQuery, page + 1, false);
+      if (mainEl && mainEl.scrollHeight <= mainEl.clientHeight + 200) {
+        triggerNextPage();
       }
     }
-  }, [companies, loading, loadingMore, page, totalPages, searchQuery]);
+  }, [displayedCompanies.length, loading, loadingMore, page, totalPages, triggerNextPage]);
 
-  // Smooth infinite scroll with both IntersectionObserver and container scroll listener
+  // Infinite scroll observer & scroll event listeners
   useEffect(() => {
     const mainEl = document.querySelector('main');
 
-    const triggerNext = () => {
-      const { page: currPage, totalPages: maxPages, loading: isLoading, loadingMore: isLoadingMore, searchQuery: currentQuery } = stateRef.current;
-      if (!isLoading && !isLoadingMore && currPage + 1 < maxPages) {
-        fetchCompanies(currentQuery, currPage + 1, false);
-      }
-    };
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting) {
-          triggerNext();
-        }
-      },
-      { 
-        root: mainEl || null,
-        rootMargin: '400px'
-      }
-    );
-
+    // 1. Intersection Observer
+    let observer = null;
     if (sentinelRef.current) {
+      observer = new IntersectionObserver(
+        (entries) => {
+          if (entries[0] && entries[0].isIntersecting) {
+            triggerNextPage();
+          }
+        },
+        { 
+          root: null, // Viewport intersection guarantees trigger on all scroll containers
+          rootMargin: '600px 0px 600px 0px',
+          threshold: 0.01
+        }
+      );
       observer.observe(sentinelRef.current);
     }
 
-    const handleScroll = () => {
-      const scrollEl = mainEl || document.documentElement;
-      if (scrollEl && scrollEl.scrollHeight) {
-        if (scrollEl.scrollTop + scrollEl.clientHeight >= scrollEl.scrollHeight - 400) {
-          triggerNext();
+    // 2. Scroll listener on <main> container
+    const handleMainScroll = () => {
+      if (mainEl && mainEl.scrollHeight) {
+        const bottomDistance = mainEl.scrollHeight - mainEl.scrollTop - mainEl.clientHeight;
+        if (bottomDistance < 700) {
+          triggerNextPage();
+        }
+      }
+    };
+
+    // 3. Scroll listener on window
+    const handleWindowScroll = () => {
+      const doc = document.documentElement;
+      if (doc && doc.scrollHeight) {
+        const bottomDistance = doc.scrollHeight - (window.scrollY || window.pageYOffset || 0) - window.innerHeight;
+        if (bottomDistance < 700) {
+          triggerNextPage();
         }
       }
     };
 
     if (mainEl) {
-      mainEl.addEventListener('scroll', handleScroll, { passive: true });
+      mainEl.addEventListener('scroll', handleMainScroll, { passive: true });
     }
-    window.addEventListener('scroll', handleScroll, { passive: true });
+    window.addEventListener('scroll', handleWindowScroll, { passive: true });
 
     return () => {
-      observer.disconnect();
-      if (mainEl) mainEl.removeEventListener('scroll', handleScroll);
-      window.removeEventListener('scroll', handleScroll);
+      if (observer) observer.disconnect();
+      if (mainEl) mainEl.removeEventListener('scroll', handleMainScroll);
+      window.removeEventListener('scroll', handleWindowScroll);
     };
-  }, [companies.length]);
+  }, [triggerNextPage, displayedCompanies.length]);
 
   const handleSearchChange = (e) => {
     setSearchQuery(e.target.value);
@@ -238,10 +309,10 @@ export default function Companies() {
         {/* Header */}
         <div className="flex flex-col gap-2">
           <h1 className="display-font text-4xl">All Companies</h1>
-          <p className="text-theme-muted text-sm">Explore interview experiences and insights from top companies.</p>
+          <p className="text-theme-muted text-sm">Explore interview experiences and insights from top companies worldwide.</p>
         </div>
 
-        {/* Search & Filter Bar */}
+        {/* Search Bar */}
         <div className="flex items-center justify-between gap-4">
           <div className="relative flex-1 max-w-md">
             <iconify-icon icon="lucide:search" className="absolute left-4 top-1/2 -translate-y-1/2 text-theme-muted"></iconify-icon>
@@ -255,7 +326,7 @@ export default function Companies() {
           </div>
         </div>
 
-        {/* Initial Loading State: 16 Skeleton Cards */}
+        {/* Initial Loading Skeleton */}
         {loading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 border-l border-t border-theme-border">
             {Array.from({ length: 16 }).map((_, i) => (
@@ -269,29 +340,29 @@ export default function Companies() {
             <h3 className="display-font text-2xl text-red-500">Failed to load companies</h3>
             <p className="text-sm text-theme-muted max-w-md">{error}</p>
             <button 
-              onClick={() => fetchCompanies(searchQuery, 0, true)}
-              className="btn-primary px-6 py-3 rounded-sm mt-4"
+              onClick={() => loadPageData(searchQuery, 0, true)}
+              className="btn-primary px-6 py-3 rounded-sm mt-4 cursor-pointer"
             >
               Retry
             </button>
           </div>
-        ) : companies.length === 0 ? (
+        ) : displayedCompanies.length === 0 ? (
           /* Empty State */
           <div className="flex flex-col items-center justify-center py-16 px-4 text-center border border-dashed border-theme-border rounded-sm gap-3">
             <iconify-icon icon="lucide:search-x" className="text-4xl text-theme-muted mb-2"></iconify-icon>
             <h3 className="display-font text-2xl text-theme-text">No companies found</h3>
-            <p className="text-sm text-theme-muted">Try another company name.</p>
+            <p className="text-sm text-theme-muted">Try searching with another company name.</p>
           </div>
         ) : (
           /* Companies Grid */
           <div className="flex flex-col">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 border-l border-t border-theme-border">
-              {companies.map(company => (
+              {displayedCompanies.map(company => (
                 <CompanyCard key={company.id || company._id || company.name} company={company} />
               ))}
             </div>
 
-            {/* Smooth Loading More Skeleton / Spinner */}
+            {/* Smooth Loading More Skeletons */}
             {loadingMore && (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 border-l border-theme-border">
                 {Array.from({ length: 4 }).map((_, i) => (
@@ -303,26 +374,26 @@ export default function Companies() {
             )}
 
             {/* Infinite Scroll Sentinel */}
-            <div ref={sentinelRef} className="h-10 w-full pointer-events-none" />
+            <div ref={sentinelRef} className="h-14 w-full pointer-events-none" />
 
             {/* Load More Button fallback if more available */}
             {hasMore && !loadingMore && (
               <div className="flex justify-center py-6">
                 <button
-                  onClick={() => fetchCompanies(searchQuery, page + 1, false)}
-                  className="px-6 py-2.5 rounded-sm border border-theme-border text-xs font-bold text-theme-text hover:bg-theme-hover transition-colors flex items-center gap-2"
+                  onClick={triggerNextPage}
+                  className="px-6 py-2.5 rounded-sm border border-theme-border text-xs font-bold text-theme-text hover:bg-theme-hover transition-colors flex items-center gap-2 cursor-pointer"
                 >
                   <iconify-icon icon="lucide:arrow-down" className="text-sm"></iconify-icon>
-                  Load More Companies
+                  Load More Companies ({displayedCompanies.length} of {totalElements})
                 </button>
               </div>
             )}
 
             {/* End of results indicator */}
-            {!loadingMore && !hasMore && companies.length > 0 && (
+            {!loadingMore && !hasMore && displayedCompanies.length > 0 && (
               <div className="flex items-center justify-center py-10 text-xs font-semibold text-theme-muted border-t border-theme-border/40 mt-4 gap-2">
                 <iconify-icon icon="lucide:check-circle" className="text-terracotta-500 text-sm"></iconify-icon>
-                <span>Showing all {totalElements || companies.length} companies</span>
+                <span>Showing all {totalElements || displayedCompanies.length} companies</span>
               </div>
             )}
           </div>

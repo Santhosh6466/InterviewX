@@ -18,11 +18,13 @@ import com.interviewx.backend.experience.dto.response.ExperienceResponse;
 import com.interviewx.backend.experience.repository.ExperienceRepository;
 import com.interviewx.backend.interviewround.dto.response.InterviewRoundResponse;
 import com.interviewx.backend.interviewround.repository.InterviewRoundRepository;
+import com.interviewx.backend.like.entity.Like;
 import com.interviewx.backend.like.repository.LikeRepository;
 import com.interviewx.backend.auth.repository.UserRepository;
 import com.interviewx.backend.common.util.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -30,8 +32,8 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
-
-import java.util.List;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -88,8 +90,9 @@ public class ExperienceService {
         Page<Experience> experiences = experienceRepository.findAll(pageable);
 
         String currentUserId = getCurrentUserId();
+        List<ExperienceResponse> responses = mapToResponses(experiences.getContent(), currentUserId);
 
-        return experiences.map(exp -> mapToResponse(exp, currentUserId));
+        return new PageImpl<>(responses, pageable, experiences.getTotalElements());
     }
 
     public ExperienceResponse updateExperience(String experienceId,
@@ -134,78 +137,10 @@ public class ExperienceService {
         experienceRepository.delete(experience);
     }
 
-    private ExperienceResponse mapToResponse(
-            Experience experience,
-            String currentUserId
-    ) {
-
-        Company company = companyRepository.findById(experience.getCompanyId())
-                .orElse(null);
-
-        ExperienceResponse response = new ExperienceResponse();
-        CompanyResponse companyResponse = new CompanyResponse();
-
-        response.setId(experience.getId());
-        response.setTitle(experience.getTitle());
-        response.setOverallExperience(experience.getOverallExperience());
-
-        if (company != null) {
-            companyResponse.setId(company.getId());
-            companyResponse.setName(company.getName());
-            companyResponse.setLogoUrl(company.getLogoUrl());
-            companyResponse.setRating(company.getRating());
-        }
-
-        response.setCompany(companyResponse);
-
-        List<InterviewRound> rounds =
-                interviewRoundRepository.findByExperienceIdOrderByRoundNumberAsc(experience.getId());
-
-        List<InterviewRoundResponse> roundResponses = rounds.stream()
-                .map(this::mapRoundToResponse)
-                .toList();
-
-        response.setInterviewRounds(roundResponses);
-
-        response.setRole(experience.getRole());
-        response.setInterviewType(experience.getInterviewType());
-        response.setExperienceLevel(experience.getExperienceLevel());
-        response.setLocation(experience.getLocation());
-        response.setInterviewDate(experience.getInterviewDate());
-        response.setResult(experience.getResult());
-        response.setDifficulty(experience.getDifficulty());
-
-        response.setCreatedAt(experience.getCreatedAt());
-        response.setUpdatedAt(experience.getUpdatedAt());
-        response.setAuthorId(experience.getUserId());
-
-        userRepository.findById(experience.getUserId()).ifPresent(author -> {
-            response.setAuthorName(author.getName());
-            response.setAuthorProfilePicture(author.getProfilePicture());
-            String seed = author.getAvatarSeed() != null ? author.getAvatarSeed() : "default-avatar";
-            response.setAuthorAvatarSeed(seed);
-            response.setAvatarSeed(seed);
-        });
-
-        response.setLikesCount(
-                likeRepository.countByExperienceId(experience.getId())
-        );
-
-        response.setLiked(
-                currentUserId != null &&
-                        likeRepository.existsByExperienceIdAndUserId(
-                                experience.getId(),
-                                currentUserId
-                        )
-        );
-
-        return response;
-    }
-
     public List<ExperienceResponse> getMyExperiences() {
         User currentUser = getCurrentUser();
         List<Experience> experiences = experienceRepository.findByUserIdOrderByCreatedAtDesc(currentUser.getId());
-        return experiences.stream().map(exp -> mapToResponse(exp, currentUser.getId())).toList();
+        return mapToResponses(experiences, currentUser.getId());
     }
 
     public Page<ExperienceResponse> getExperiencesByCompany(String companyId,
@@ -218,8 +153,9 @@ public class ExperienceService {
                 experienceRepository.findByCompanyId(companyId, pageable);
 
         String currentUserId = getCurrentUserId();
+        List<ExperienceResponse> responses = mapToResponses(experiences.getContent(), currentUserId);
 
-        return experiences.map(exp -> mapToResponse(exp, currentUserId));
+        return new PageImpl<>(responses, pageable, experiences.getTotalElements());
     }
 
     public Page<ExperienceResponse> searchExperiences(
@@ -243,8 +179,116 @@ public class ExperienceService {
         );
 
         String currentUserId = getCurrentUserId();
+        List<ExperienceResponse> responses = mapToResponses(experiences.getContent(), currentUserId);
 
-        return experiences.map(exp -> mapToResponse(exp, currentUserId));
+        return new PageImpl<>(responses, pageable, experiences.getTotalElements());
+    }
+
+    public ExperienceResponse mapToResponse(Experience experience, String currentUserId) {
+        if (experience == null) {
+            return null;
+        }
+        List<ExperienceResponse> responses = mapToResponses(Collections.singletonList(experience), currentUserId);
+        return responses.isEmpty() ? null : responses.get(0);
+    }
+
+    public List<ExperienceResponse> mapToResponses(List<Experience> experiences, String currentUserId) {
+        if (experiences == null || experiences.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<String> expIds = experiences.stream()
+                .map(Experience::getId)
+                .filter(Objects::nonNull)
+                .toList();
+
+        List<String> companyIds = experiences.stream()
+                .map(Experience::getCompanyId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+
+        List<String> userIds = experiences.stream()
+                .map(Experience::getUserId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+
+        // 1. Batch fetch companies
+        Map<String, Company> companyMap = companyIds.isEmpty() ? Collections.emptyMap()
+                : companyRepository.findAllById(companyIds).stream()
+                        .collect(Collectors.toMap(Company::getId, c -> c, (a, b) -> a));
+
+        // 2. Batch fetch author users
+        Map<String, User> userMap = userIds.isEmpty() ? Collections.emptyMap()
+                : userRepository.findAllById(userIds).stream()
+                        .collect(Collectors.toMap(User::getId, u -> u, (a, b) -> a));
+
+        // 3. Batch fetch interview rounds
+        List<InterviewRound> allRounds = expIds.isEmpty() ? Collections.emptyList()
+                : interviewRoundRepository.findByExperienceIdInOrderByRoundNumberAsc(expIds);
+        Map<String, List<InterviewRound>> roundsMap = allRounds.stream()
+                .collect(Collectors.groupingBy(InterviewRound::getExperienceId));
+
+        // 4. Batch fetch like counts
+        List<Like> allLikes = expIds.isEmpty() ? Collections.emptyList()
+                : likeRepository.findByExperienceIdIn(expIds);
+        Map<String, Long> likesCountMap = allLikes.stream()
+                .collect(Collectors.groupingBy(Like::getExperienceId, Collectors.counting()));
+
+        // 5. Batch fetch current user liked status
+        Set<String> userLikedExpIds = (currentUserId == null || expIds.isEmpty()) ? Collections.emptySet()
+                : likeRepository.findByExperienceIdInAndUserId(expIds, currentUserId).stream()
+                        .map(Like::getExperienceId)
+                        .collect(Collectors.toSet());
+
+        return experiences.stream().map(exp -> {
+            Company company = exp.getCompanyId() != null ? companyMap.get(exp.getCompanyId()) : null;
+            CompanyResponse companyResponse = new CompanyResponse();
+            if (company != null) {
+                companyResponse.setId(company.getId());
+                companyResponse.setName(company.getName());
+                companyResponse.setLogoUrl(company.getLogoUrl());
+                companyResponse.setRating(company.getRating());
+            }
+
+            List<InterviewRound> rounds = roundsMap.getOrDefault(exp.getId(), Collections.emptyList());
+            List<InterviewRoundResponse> roundResponses = rounds.stream()
+                    .map(this::mapRoundToResponse)
+                    .toList();
+
+            User author = exp.getUserId() != null ? userMap.get(exp.getUserId()) : null;
+
+            ExperienceResponse response = new ExperienceResponse();
+            response.setId(exp.getId());
+            response.setTitle(exp.getTitle());
+            response.setOverallExperience(exp.getOverallExperience());
+            response.setCompany(companyResponse);
+            response.setInterviewRounds(roundResponses);
+            response.setRole(exp.getRole());
+            response.setInterviewType(exp.getInterviewType());
+            response.setExperienceLevel(exp.getExperienceLevel());
+            response.setLocation(exp.getLocation());
+            response.setInterviewDate(exp.getInterviewDate());
+            response.setResult(exp.getResult());
+            response.setDifficulty(exp.getDifficulty());
+            response.setCreatedAt(exp.getCreatedAt());
+            response.setUpdatedAt(exp.getUpdatedAt());
+            response.setAuthorId(exp.getUserId());
+
+            if (author != null) {
+                response.setAuthorName(author.getName());
+                response.setAuthorProfilePicture(author.getProfilePicture());
+                String seed = author.getAvatarSeed() != null ? author.getAvatarSeed() : "default-avatar";
+                response.setAuthorAvatarSeed(seed);
+                response.setAvatarSeed(seed);
+            }
+
+            response.setLikesCount(likesCountMap.getOrDefault(exp.getId(), 0L));
+            response.setLiked(userLikedExpIds.contains(exp.getId()));
+
+            return response;
+        }).toList();
     }
 
     private InterviewRoundResponse mapRoundToResponse(InterviewRound round) {

@@ -54,7 +54,7 @@ public class ExperienceRepositoryCustom {
         }
 
         if (result != null) {
-            criteriaList.add(Criteria.where("interviewResult").is(result));
+            criteriaList.add(Criteria.where("result").is(result));
         }
 
         if (difficulty != null) {
