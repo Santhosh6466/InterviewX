@@ -25,7 +25,9 @@ const cachingAdapter = async (config) => {
   const shouldCache = isGet && config.cache !== false;
 
   if (shouldCache) {
-    const cacheKey = requestCache.getCacheKey(method, config.url, config.params);
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    const userScope = token ? `[auth:${token.slice(-10)}]:` : '[anon]:';
+    const cacheKey = `${userScope}${requestCache.getCacheKey(method, config.url, config.params)}`;
     const cachedData = requestCache.get(cacheKey);
 
     if (cachedData !== null && cachedData !== undefined) {
@@ -83,7 +85,7 @@ const cachingAdapter = async (config) => {
 
 const api = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 25000,
+  timeout: 60000,
   adapter: cachingAdapter,
   headers: {
     'Content-Type': 'application/json',

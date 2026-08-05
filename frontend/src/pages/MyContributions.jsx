@@ -10,31 +10,10 @@ import { toast } from 'react-hot-toast';
 import requestCache from '../services/cache';
 
 const getInitialContributions = (user) => {
-  const directCached = requestCache.get('user_my_experiences');
+  const userKey = user?.id || user?.email || 'anon';
+  const directCached = requestCache.get(`user_my_experiences_${userKey}`);
   if (Array.isArray(directCached) && directCached.length > 0) {
     return directCached;
-  }
-
-  const cached = requestCache.get('GET:/api/experiences?size=100') || requestCache.get('GET:/api/experiences');
-  if (cached) {
-    const list = Array.isArray(cached) ? cached : (cached.content || cached.experiences || []);
-    if (user && list.length > 0) {
-      const userIdStr = String(user.id || user._id || '').toLowerCase();
-      const userEmailStr = String(user.email || '').toLowerCase();
-      const userNameStr = String(user.name || user.username || '').toLowerCase();
-
-      return list.filter(exp => {
-        const expUserId = String(exp.userId || exp.user?.id || exp.user?._id || exp.authorId || '').toLowerCase();
-        const expEmail = String(exp.userEmail || exp.user?.email || exp.email || '').toLowerCase();
-        const expAuthor = String(exp.authorName || exp.userName || exp.user?.name || exp.createdByName || '').toLowerCase();
-
-        return (
-          (userIdStr && expUserId && expUserId === userIdStr) ||
-          (userEmailStr && expEmail && expEmail === userEmailStr) ||
-          (userNameStr && expAuthor && expAuthor === userNameStr)
-        );
-      });
-    }
   }
   return [];
 };
@@ -50,12 +29,22 @@ export default function MyContributions() {
   const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
+    const userKey = user?.id || user?.email || 'anon';
+    const cached = requestCache.get(`user_my_experiences_${userKey}`);
+    if (Array.isArray(cached) && cached.length > 0) {
+      setExperiences(cached);
+      setLoading(false);
+    } else {
+      setExperiences([]);
+      setLoading(true);
+    }
     fetchUserExperiences();
-  }, [user]);
+  }, [user?.id, user?.email]);
 
   const fetchUserExperiences = async () => {
+    const userKey = user?.id || user?.email || 'anon';
     try {
-      if (experiences.length === 0 && !requestCache.get('user_my_experiences')) {
+      if (experiences.length === 0 && !requestCache.get(`user_my_experiences_${userKey}`)) {
         setLoading(true);
       }
       
@@ -99,7 +88,7 @@ export default function MyContributions() {
         }));
 
         setExperiences(formatted);
-        requestCache.set('user_my_experiences', formatted, 180000);
+        requestCache.set(`user_my_experiences_${userKey}`, formatted, 180000);
       }
     } catch (err) {
       console.warn('[MyContributions] Error fetching user experiences:', err);

@@ -27,8 +27,10 @@ export default function DashboardLayout({ children, activeTab = 'Home', searchVa
       profileService.getProfile()
         .then(data => setProfileData(data))
         .catch(err => console.warn('[DashboardLayout] Error loading profile:', err));
+    } else {
+      setProfileData(null);
     }
-  }, [user]);
+  }, [user?.id, user?.email]);
 
   const completionPercentage = profileData ? calculateCompletionPercentage(profileData) : 100;
   const isProfileIncomplete = completionPercentage < 100;

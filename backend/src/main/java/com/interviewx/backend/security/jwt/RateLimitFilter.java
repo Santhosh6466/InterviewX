@@ -25,20 +25,39 @@ public class RateLimitFilter extends OncePerRequestFilter {
                                     FilterChain filterChain)
             throws ServletException, IOException {
 
+        // Always allow CORS preflight OPTIONS requests without consuming rate limit tokens
+        if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
+            filterChain.doFilter(request, response);
+            return;
+        }
+
         String path = request.getRequestURI();
 
-        if (path.equals("/auth/send-otp")
-                || path.equals("/auth/verify-otp")
-                || path.equals("/auth/register")
-                || path.equals("/auth/login")) {
+        if (path.endsWith("/auth/send-otp")
+                || path.endsWith("/auth/verify-otp")
+                || path.endsWith("/auth/register")
+                || path.endsWith("/auth/login")
+                || path.endsWith("/auth/google")) {
 
-            String clientIp = request.getRemoteAddr();
+            String clientIp = extractClientIp(request);
             Bucket bucket = rateLimiterService.resolveBucket(clientIp);
             var probe = bucket.tryConsumeAndReturnRemaining(1);
 
             if (!probe.isConsumed()) {
                 response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
                 response.setContentType("application/json");
+
+                // Attach CORS headers so mobile and web browsers don't surface a generic Network Error
+                String origin = request.getHeader("Origin");
+                if (origin != null && !origin.isBlank()) {
+                    response.setHeader("Access-Control-Allow-Origin", origin);
+                    response.setHeader("Access-Control-Allow-Credentials", "true");
+                } else {
+                    response.setHeader("Access-Control-Allow-Origin", "*");
+                }
+                response.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD");
+                response.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Requested-With, Accept, Origin");
+
                 response.getWriter().write("""
                 {
                     "status": 429,
@@ -50,5 +69,17 @@ public class RateLimitFilter extends OncePerRequestFilter {
         }
 
         filterChain.doFilter(request, response);
+    }
+
+    private String extractClientIp(HttpServletRequest request) {
+        String xfHeader = request.getHeader("X-Forwarded-For");
+        if (xfHeader != null && !xfHeader.isBlank()) {
+            return xfHeader.split(",")[0].trim();
+        }
+        String realIp = request.getHeader("X-Real-IP");
+        if (realIp != null && !realIp.isBlank()) {
+            return realIp.trim();
+        }
+        return request.getRemoteAddr();
     }
 }

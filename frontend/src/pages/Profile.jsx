@@ -41,26 +41,28 @@ const DEFAULT_EXPERIENCES = [
 
 export default function Profile({ sidebarTab = 'Profile' }) {
   const { user } = useAuth();
+  const userKey = user?.id || user?.email || 'anon';
+
   const [experiences, setExperiences] = useState(() => {
-    const cached = requestCache.get('user_my_experiences');
+    const cached = requestCache.get(`user_my_experiences_${userKey}`);
     return Array.isArray(cached) ? cached : [];
   });
   const [loading, setLoading] = useState(() => {
-    return !requestCache.get('user_my_experiences');
+    return !requestCache.get(`user_my_experiences_${userKey}`);
   });
   const [profileData, setProfileData] = useState(() => {
-    return requestCache.get('user_profile_data') || null;
+    return requestCache.get(`user_profile_data_${userKey}`) || null;
   });
   const [loadingProfile, setLoadingProfile] = useState(() => {
-    return !requestCache.get('user_profile_data');
+    return !requestCache.get(`user_profile_data_${userKey}`);
   });
   const [activeTab, setActiveTab] = useState('My Experiences');
   const [bookmarks, setBookmarks] = useState(() => {
-    const cached = requestCache.get('user_profile_bookmarks');
+    const cached = requestCache.get(`user_profile_bookmarks_${userKey}`);
     return Array.isArray(cached) ? cached : [];
   });
   const [loadingBookmarks, setLoadingBookmarks] = useState(() => {
-    return !requestCache.get('user_profile_bookmarks');
+    return !requestCache.get(`user_profile_bookmarks_${userKey}`);
   });
   
   // Deletion modal state
@@ -68,10 +70,23 @@ export default function Profile({ sidebarTab = 'Profile' }) {
   const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
+    const currentKey = user?.id || user?.email || 'anon';
+    const cachedProfile = requestCache.get(`user_profile_data_${currentKey}`);
+    const cachedExperiences = requestCache.get(`user_my_experiences_${currentKey}`);
+    const cachedBookmarks = requestCache.get(`user_profile_bookmarks_${currentKey}`);
+    
+    setProfileData(cachedProfile || null);
+    setExperiences(Array.isArray(cachedExperiences) ? cachedExperiences : []);
+    setBookmarks(Array.isArray(cachedBookmarks) ? cachedBookmarks : []);
+    setLoadingProfile(!cachedProfile);
+    setLoading(!cachedExperiences);
+    setLoadingBookmarks(!cachedBookmarks);
+
     fetchAllProfileData();
-  }, [user]);
+  }, [user?.id, user?.email]);
 
   const fetchAllProfileData = async () => {
+    const currentKey = user?.id || user?.email || 'anon';
     try {
       const [profileResult, experiencesResult, bookmarksResult] = await Promise.allSettled([
         profileService.getProfile(),
@@ -82,7 +97,7 @@ export default function Profile({ sidebarTab = 'Profile' }) {
       // 1. Process Profile
       if (profileResult.status === 'fulfilled' && profileResult.value) {
         setProfileData(profileResult.value);
-        requestCache.set('user_profile_data', profileResult.value, 180000);
+        requestCache.set(`user_profile_data_${currentKey}`, profileResult.value, 180000);
       }
       setLoadingProfile(false);
 
@@ -93,7 +108,7 @@ export default function Profile({ sidebarTab = 'Profile' }) {
         rawBookmarks = bookmarksResult.value;
         bookmarkIds = new Set(rawBookmarks.map(b => String(b.experienceId || b.id)));
         setBookmarks(rawBookmarks);
-        requestCache.set('user_profile_bookmarks', rawBookmarks, 180000);
+        requestCache.set(`user_profile_bookmarks_${currentKey}`, rawBookmarks, 180000);
       }
       setLoadingBookmarks(false);
 
@@ -125,7 +140,7 @@ export default function Profile({ sidebarTab = 'Profile' }) {
           }));
 
           setExperiences(processedMyExps);
-          requestCache.set('user_my_experiences', processedMyExps, 180000);
+          requestCache.set(`user_my_experiences_${currentKey}`, processedMyExps, 180000);
         }
       }
       setLoading(false);

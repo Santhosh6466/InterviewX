@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import DashboardLayout from '../layouts/DashboardLayout';
+import { useAuth } from '../contexts/AuthContext';
 import { experienceService } from '../services/experienceService';
 import CompanyLogo from '../components/CompanyLogo';
 import BookmarkButton from '../components/BookmarkButton';
@@ -7,37 +8,33 @@ import { SkeletonCard } from '../components/Skeleton';
 import { toast } from 'react-hot-toast';
 import requestCache from '../services/cache';
 
-const getInitialBookmarks = () => {
-  const directCached = requestCache.get('user_bookmarks_list');
+const getInitialBookmarks = (userKey) => {
+  const directCached = requestCache.get(`user_bookmarks_list_${userKey}`);
   if (Array.isArray(directCached) && directCached.length > 0) {
     return directCached;
-  }
-
-  const cached = requestCache.get('GET:/users/me/bookmarks') || requestCache.get('GET:/api/bookmarks');
-  if (Array.isArray(cached) && cached.length > 0) {
-    const sample = cached[0];
-    if (sample.company || sample.companyName || sample.role || sample.title) {
-      return cached.map(item => ({ ...item, bookmarked: true }));
-    }
-    if (sample.experience) {
-      return cached.map(item => ({
-        ...item.experience,
-        bookmarkId: item.id,
-        bookmarked: true
-      }));
-    }
   }
   return [];
 };
 
 export default function Bookmarks() {
-  const initialList = getInitialBookmarks();
+  const { user } = useAuth();
+  const userKey = user?.id || user?.email || 'anon';
+  const initialList = getInitialBookmarks(userKey);
   const [bookmarks, setBookmarks] = useState(initialList);
   const [loading, setLoading] = useState(() => initialList.length === 0);
 
   useEffect(() => {
+    const currentKey = user?.id || user?.email || 'anon';
+    const cached = requestCache.get(`user_bookmarks_list_${currentKey}`);
+    if (Array.isArray(cached) && cached.length > 0) {
+      setBookmarks(cached);
+      setLoading(false);
+    } else {
+      setBookmarks([]);
+      setLoading(true);
+    }
     fetchBookmarks();
-  }, []);
+  }, [user?.id, user?.email]);
 
   const fetchBookmarks = async () => {
     try {
@@ -81,7 +78,8 @@ export default function Bookmarks() {
       }
       
       setBookmarks(resolvedExperiences);
-      requestCache.set('user_bookmarks_list', resolvedExperiences, 180000);
+      const currentKey = user?.id || user?.email || 'anon';
+      requestCache.set(`user_bookmarks_list_${currentKey}`, resolvedExperiences, 180000);
     } catch (err) {
       console.error('[Bookmarks] Error fetching bookmarks:', err);
       if (bookmarks.length === 0) {

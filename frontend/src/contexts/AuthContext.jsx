@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import api from '../utils/api';
 import authService from '../services/authService';
+import requestCache from '../services/cache';
 
 const AuthContext = createContext();
 
@@ -54,14 +55,15 @@ export const AuthProvider = ({ children }) => {
     }
     try {
       setLoadingProfile(true);
-      const response = await api.get('/profile');
+      // Bypass cache for current authenticated user's profile status
+      const response = await api.get('/profile', { cache: false });
       setProfileCompleted(response.data.profileCompleted);
       
       // Sync the user's name and avatarSeed from their profile to the global auth state
       const profileName = response.data.name || response.data.fullName;
       const profileAvatarSeed = response.data.avatarSeed;
       if (profileName || profileAvatarSeed) {
-        const currentUser = JSON.parse(storedUserStr);
+        const currentUser = JSON.parse(localStorage.getItem('user') || storedUserStr);
         let updated = false;
         const updatedUser = { ...currentUser };
         if (profileName && currentUser.name !== profileName) {
@@ -99,14 +101,18 @@ export const AuthProvider = ({ children }) => {
       setProfileCompleted(null);
       setLoadingProfile(false);
     }
-  }, [token, user, fetchProfile]);
+  }, [token, user?.id, user?.email, fetchProfile]);
 
   const saveAuthData = useCallback((jwtToken, userData) => {
-    // Write to localStorage FIRST
+    // Clear all in-memory caches from previous accounts immediately
+    requestCache.clear();
+
+    // Write to localStorage
     localStorage.setItem('token', jwtToken);
     localStorage.setItem('user', JSON.stringify(userData));
     console.log('[AuthContext] saveAuthData - token:', jwtToken ? 'SET' : 'EMPTY');
     console.log('[AuthContext] saveAuthData - user:', userData);
+
     // Then update React state
     setToken(jwtToken);
     setUser(userData);
@@ -114,6 +120,12 @@ export const AuthProvider = ({ children }) => {
 
   const login = useCallback(async (email, password) => {
     try {
+      // Clear any stale registration flags from previous sessions
+      sessionStorage.removeItem('justRegistered');
+      localStorage.removeItem('justRegistered');
+      sessionStorage.removeItem('onboardingSkipped');
+      localStorage.removeItem('onboardingSkipped');
+
       const data = await authService.login(email, password);
       console.log('[AuthContext] LOGIN - Response data:', data);
       const token = data.token || data.jwt || data.accessToken;
@@ -207,8 +219,18 @@ export const AuthProvider = ({ children }) => {
   }, [saveAuthData]);
 
   const logout = useCallback(() => {
+    // Clear in-memory caches
+    requestCache.clear();
+
+    // Clear local storage and session storage
     localStorage.removeItem('token');
     localStorage.removeItem('user');
+    localStorage.removeItem('justRegistered');
+    localStorage.removeItem('onboardingSkipped');
+    sessionStorage.removeItem('justRegistered');
+    sessionStorage.removeItem('onboardingSkipped');
+
+    // Reset React state
     setToken(null);
     setUser(null);
     setProfileCompleted(null);
