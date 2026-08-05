@@ -78,8 +78,13 @@ export const experienceService = {
   },
 
   async getUserExperiences() {
-    const response = await api.get('/api/experiences', { params: { size: 100 } });
-    return response.data;
+    try {
+      const response = await api.get('/api/experiences/my');
+      return response.data;
+    } catch {
+      const response = await api.get('/api/experiences', { params: { size: 30 } });
+      return response.data;
+    }
   },
 
   async getExperienceById(experienceId) {

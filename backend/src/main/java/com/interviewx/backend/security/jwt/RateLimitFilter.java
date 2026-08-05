@@ -25,10 +25,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
                                     FilterChain filterChain)
             throws ServletException, IOException {
 
-//        System.out.println("========== RateLimitFilter ==========");
-
         String path = request.getRequestURI();
-//        System.out.println("Path : " + path);
 
         if (path.equals("/auth/send-otp")
                 || path.equals("/auth/verify-otp")
@@ -36,44 +33,18 @@ public class RateLimitFilter extends OncePerRequestFilter {
                 || path.equals("/auth/login")) {
 
             String clientIp = request.getRemoteAddr();
-            System.out.println("Client IP : " + clientIp);
-
             Bucket bucket = rateLimiterService.resolveBucket(clientIp);
-
-            boolean allowed = bucket.tryConsume(1);
-
-            System.out.println("Allowed : " + allowed);var probe = bucket.tryConsumeAndReturnRemaining(1);
-
-            System.out.println("Allowed : " + probe.isConsumed());
-            System.out.println("Remaining : " + probe.getRemainingTokens());
+            var probe = bucket.tryConsumeAndReturnRemaining(1);
 
             if (!probe.isConsumed()) {
-
                 response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
                 response.setContentType("application/json");
-
                 response.getWriter().write("""
-            {
-                "status":429,
-                "message":"Too many requests. Please try again later."
-            }
-            """);
-
-                return;
-            }
-
-            if (!allowed) {
-
-                response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
-                response.setContentType("application/json");
-
-                response.getWriter().write("""
-                    {
-                        "status":429,
-                        "message":"Too many requests. Please try again later."
-                    }
-                    """);
-
+                {
+                    "status": 429,
+                    "message": "Too many requests. Please try again later."
+                }
+                """);
                 return;
             }
         }

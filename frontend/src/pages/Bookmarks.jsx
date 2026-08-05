@@ -8,7 +8,12 @@ import { toast } from 'react-hot-toast';
 import requestCache from '../services/cache';
 
 const getInitialBookmarks = () => {
-  const cached = requestCache.get('GET', '/users/me/bookmarks');
+  const directCached = requestCache.get('user_bookmarks_list');
+  if (Array.isArray(directCached) && directCached.length > 0) {
+    return directCached;
+  }
+
+  const cached = requestCache.get('GET:/users/me/bookmarks') || requestCache.get('GET:/api/bookmarks');
   if (Array.isArray(cached) && cached.length > 0) {
     const sample = cached[0];
     if (sample.company || sample.companyName || sample.role || sample.title) {
@@ -28,7 +33,7 @@ const getInitialBookmarks = () => {
 export default function Bookmarks() {
   const initialList = getInitialBookmarks();
   const [bookmarks, setBookmarks] = useState(initialList);
-  const [loading, setLoading] = useState(() => initialList.length === 0 && !requestCache.get('GET', '/users/me/bookmarks'));
+  const [loading, setLoading] = useState(() => initialList.length === 0);
 
   useEffect(() => {
     fetchBookmarks();
@@ -36,7 +41,9 @@ export default function Bookmarks() {
 
   const fetchBookmarks = async () => {
     try {
-      setLoading(true);
+      if (bookmarks.length === 0 && !requestCache.get('user_bookmarks_list')) {
+        setLoading(true);
+      }
       const res = await experienceService.getMyBookmarks();
       const rawBookmarks = Array.isArray(res) ? res : [];
       
@@ -74,9 +81,12 @@ export default function Bookmarks() {
       }
       
       setBookmarks(resolvedExperiences);
+      requestCache.set('user_bookmarks_list', resolvedExperiences, 180000);
     } catch (err) {
       console.error('[Bookmarks] Error fetching bookmarks:', err);
-      toast.error('Failed to load bookmarks.');
+      if (bookmarks.length === 0) {
+        toast.error('Failed to load bookmarks.');
+      }
     } finally {
       setLoading(false);
     }
@@ -109,7 +119,8 @@ export default function Bookmarks() {
           ) : (
             bookmarks.map((exp, i) => {
               const expId = exp.id || exp._id;
-              const companyName = exp.company?.name || exp.companyName || exp.company || 'Company';
+              const isMongoId = (str) => typeof str === 'string' && /^[0-9a-fA-F]{24}$/.test(str);
+              const companyName = exp.company?.name || exp.companyName || (typeof exp.company === 'string' && !isMongoId(exp.company) ? exp.company : null) || 'Company';
               const companyIcon = exp.company?.logoUrl ? null : (exp.icon || 'google');
               const roleName = exp.role || exp.title || 'Software Engineer';
               const dateStr = exp.interviewDate || exp.date || 'Recent';

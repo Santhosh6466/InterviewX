@@ -24,8 +24,13 @@ export default function CompanyLogo({
   const [hasError, setHasError] = useState(false);
   const [fetchedLogo, setFetchedLogo] = useState(null);
 
+  const isMongoId = (str) => typeof str === 'string' && /^[0-9a-fA-F]{24}$/.test(str);
   const initialLogo = company?.logoUrl || company?.logo || company?.imageUrl || company?.image || logoUrl;
-  const companyName = company?.name || name || 'Company';
+  let rawCompanyName = company?.name || name || 'Company';
+  if (isMongoId(rawCompanyName)) {
+    rawCompanyName = 'Company';
+  }
+  const companyName = rawCompanyName;
   const compId = company?.id || company?._id;
 
   // If logoUrl is not present in initial company payload, fetch getCompanyById(id) from backend

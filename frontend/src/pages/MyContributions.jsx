@@ -10,7 +10,12 @@ import { toast } from 'react-hot-toast';
 import requestCache from '../services/cache';
 
 const getInitialContributions = (user) => {
-  const cached = requestCache.get('GET', '/api/experiences', { size: 100 }) || requestCache.get('GET', '/api/experiences', { size: '100' });
+  const directCached = requestCache.get('user_my_experiences');
+  if (Array.isArray(directCached) && directCached.length > 0) {
+    return directCached;
+  }
+
+  const cached = requestCache.get('GET:/api/experiences?size=100') || requestCache.get('GET:/api/experiences');
   if (cached) {
     const list = Array.isArray(cached) ? cached : (cached.content || cached.experiences || []);
     if (user && list.length > 0) {
@@ -38,7 +43,7 @@ export default function MyContributions() {
   const { user } = useAuth();
   const initialList = getInitialContributions(user);
   const [experiences, setExperiences] = useState(initialList);
-  const [loading, setLoading] = useState(() => initialList.length === 0 && !requestCache.get('GET', '/api/experiences', { size: 100 }));
+  const [loading, setLoading] = useState(() => initialList.length === 0);
   
   // Deletion modal state
   const [selectedDeleteId, setSelectedDeleteId] = useState(null);
@@ -50,55 +55,54 @@ export default function MyContributions() {
 
   const fetchUserExperiences = async () => {
     try {
-      setLoading(true);
+      if (experiences.length === 0 && !requestCache.get('user_my_experiences')) {
+        setLoading(true);
+      }
       
+      const [expResult, bookmarksResult] = await Promise.allSettled([
+        experienceService.getUserExperiences(),
+        experienceService.getMyBookmarks()
+      ]);
+
       let bookmarkIds = new Set();
-      try {
-        const bookmarksRes = await experienceService.getMyBookmarks();
-        const bList = Array.isArray(bookmarksRes) ? bookmarksRes : [];
-        bookmarkIds = new Set(bList.map(b => String(b.experienceId || b.id)));
-      } catch (bookmarkErr) {
-        console.warn('[MyContributions] Error fetching bookmarks:', bookmarkErr);
+      if (bookmarksResult.status === 'fulfilled' && Array.isArray(bookmarksResult.value)) {
+        bookmarkIds = new Set(bookmarksResult.value.map(b => String(b.experienceId || b.id)));
       }
 
-      let data;
-      try {
-        data = await experienceService.getUserExperiences(user?.id);
-      } catch {
-        data = await experienceService.getAllExperiences(0, 100);
-      }
-      
-      const list = Array.isArray(data) ? data : (data?.content || data?.experiences || []);
-      
-      if (user) {
-        const userIdStr = String(user.id || user._id || '').toLowerCase();
-        const userEmailStr = String(user.email || '').toLowerCase();
-        const userNameStr = String(user.name || user.username || '').toLowerCase();
+      if (expResult.status === 'fulfilled' && expResult.value) {
+        const raw = expResult.value;
+        const list = Array.isArray(raw) ? raw : (raw.content || raw.experiences || []);
+        
+        let processedMyExps = list;
+        // If coming from global fallback endpoint, filter by user
+        if (user && list.length > 0 && !Array.isArray(raw)) {
+          const userIdStr = String(user.id || user._id || '').toLowerCase();
+          const userEmailStr = String(user.email || '').toLowerCase();
+          const userNameStr = String(user.name || user.username || '').toLowerCase();
 
-        const myExperiences = list.filter(exp => {
-          const expUserId = String(exp.userId || exp.user?.id || exp.user?._id || exp.authorId || '').toLowerCase();
-          const expEmail = String(exp.userEmail || exp.user?.email || exp.email || '').toLowerCase();
-          const expAuthor = String(exp.authorName || exp.userName || exp.user?.name || exp.createdByName || '').toLowerCase();
+          processedMyExps = list.filter(exp => {
+            const expUserId = String(exp.userId || exp.user?.id || exp.user?._id || exp.authorId || '').toLowerCase();
+            const expEmail = String(exp.userEmail || exp.user?.email || exp.email || '').toLowerCase();
+            const expAuthor = String(exp.authorName || exp.userName || exp.user?.name || exp.createdByName || '').toLowerCase();
 
-          return (
-            (userIdStr && expUserId && expUserId === userIdStr) ||
-            (userEmailStr && expEmail && expEmail === userEmailStr) ||
-            (userNameStr && expAuthor && expAuthor === userNameStr)
-          );
-        });
+            return (
+              (userIdStr && expUserId && expUserId === userIdStr) ||
+              (userEmailStr && expEmail && expEmail === userEmailStr) ||
+              (userNameStr && expAuthor && expAuthor === userNameStr)
+            );
+          });
+        }
 
-        const processedMyExps = myExperiences.map(exp => ({
+        const formatted = processedMyExps.map(exp => ({
           ...exp,
           bookmarked: bookmarkIds.has(String(exp.id || exp._id))
         }));
 
-        setExperiences(processedMyExps);
-      } else {
-        setExperiences([]);
+        setExperiences(formatted);
+        requestCache.set('user_my_experiences', formatted, 180000);
       }
     } catch (err) {
       console.warn('[MyContributions] Error fetching user experiences:', err);
-      setExperiences([]);
     } finally {
       setLoading(false);
     }

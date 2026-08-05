@@ -2,39 +2,86 @@ import React, { useState, useEffect } from 'react';
 import DashboardLayout from '../layouts/DashboardLayout';
 import companyService from '../services/companyService';
 import experienceService from '../services/experienceService';
+import requestCache from '../services/cache';
 import { SkeletonCard } from '../components/Skeleton';
-import { getInterviewResultLabel, getDifficultyLabel, getInterviewTypeLabel, getStatusBadgeClass } from '../constants/enums';
 import CompanyLogo from '../components/CompanyLogo';
-import LikeButton from '../components/LikeButton';
-import BookmarkButton from '../components/BookmarkButton';
-import StatusChip from '../components/StatusChip';
-import AttributePill from '../components/AttributePill';
-import DifficultyIndicator from '../components/DifficultyIndicator';
 import ExperienceRow from '../components/ExperienceRow';
 import NotFound from './NotFound';
 
 // In-memory cache for company details and experiences
 const companyDetailsCache = new Map();
 
+const isMongoId = (str) => typeof str === 'string' && /^[0-9a-fA-F]{24}$/.test(str);
+
+const getCompanyIdFromHash = () => {
+  const hash = window.location.hash;
+  const parts = hash.split('#/company/');
+  return parts[1] || '';
+};
+
+const findCompanyInCache = (compId) => {
+  if (!compId) return null;
+  if (companyDetailsCache.has(compId)) {
+    return companyDetailsCache.get(compId)?.company || null;
+  }
+  
+  // Check all companies cache
+  const allCompanies = requestCache.get('GET', '/api/companies') || 
+                       requestCache.get('GET:/api/companies');
+  if (Array.isArray(allCompanies)) {
+    const found = allCompanies.find(c => 
+      String(c.id || c._id) === String(compId) || 
+      String(c.name).toLowerCase() === String(compId).toLowerCase()
+    );
+    if (found) return found;
+  }
+
+  // Check search cache
+  const searchCache = requestCache.get('GET', '/api/companies/search', { page: 0, size: 24 }) ||
+                      requestCache.get('GET:/api/companies/search?page=0&size=24');
+  if (searchCache) {
+    const list = Array.isArray(searchCache.content) ? searchCache.content : (Array.isArray(searchCache) ? searchCache : []);
+    const found = list.find(c => 
+      String(c.id || c._id) === String(compId) || 
+      String(c.name).toLowerCase() === String(compId).toLowerCase()
+    );
+    if (found) return found;
+  }
+
+  return null;
+};
+
 export default function CompanyDetails() {
-  const [company, setCompany] = useState(null);
-  const [experiences, setExperiences] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const compIdFromUrl = getCompanyIdFromHash();
+  const initialCompany = findCompanyInCache(compIdFromUrl);
+  const initialExps = companyDetailsCache.get(compIdFromUrl)?.experiences || [];
+
+  const [company, setCompany] = useState(initialCompany);
+  const [experiences, setExperiences] = useState(initialExps);
+  const [loading, setLoading] = useState(() => !initialCompany);
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState('Experiences');
 
-  const getCompanyIdFromHash = () => {
-    const hash = window.location.hash;
-    const parts = hash.split('#/company/');
-    return parts[1] || 'google';
-  };
-
   useEffect(() => {
-    const compId = getCompanyIdFromHash();
-    fetchData(compId);
+    const handleNavigation = () => {
+      const currentId = getCompanyIdFromHash();
+      if (!currentId) return;
+
+      const cached = findCompanyInCache(currentId);
+      if (cached) {
+        setCompany(cached);
+      }
+      fetchData(currentId);
+    };
+
+    handleNavigation();
+    window.addEventListener('hashchange', handleNavigation);
+    return () => window.removeEventListener('hashchange', handleNavigation);
   }, []);
 
   const fetchData = async (compId) => {
+    if (!compId) return;
+
     // Check in-memory cache first to avoid duplicate API calls
     if (companyDetailsCache.has(compId)) {
       const cached = companyDetailsCache.get(compId);
@@ -58,7 +105,9 @@ export default function CompanyDetails() {
     }
 
     try {
-      setLoading(true);
+      if (!company) {
+        setLoading(true);
+      }
       setError('');
 
       // Fetch company details, experiences & bookmarks in parallel
@@ -94,12 +143,13 @@ export default function CompanyDetails() {
         }
       }
 
+      const cName = fetchedCompany?.name || (company?.name || '');
+
       // Filter helper to ensure experiences strictly belong to this company
       const isForCompany = (exp) => {
         if (!exp) return false;
         const expCompId = exp.companyId || exp.company?.id || exp.company;
         const expCompName = exp.company?.name || exp.companyName || '';
-        const cName = fetchedCompany?.name || companyName || '';
 
         return (
           (compId && String(expCompId) === String(compId)) ||
@@ -132,14 +182,16 @@ export default function CompanyDetails() {
         bookmarked: bookmarkIds.has(String(exp.id || exp._id))
       }));
 
-      setCompany(fetchedCompany);
+      setCompany(fetchedCompany || company);
       setExperiences(processedExperiences);
 
       // Save into cache
-      companyDetailsCache.set(compId, {
-        company: fetchedCompany,
-        experiences: processedExperiences
-      });
+      if (fetchedCompany) {
+        companyDetailsCache.set(compId, {
+          company: fetchedCompany,
+          experiences: processedExperiences
+        });
+      }
     } catch (err) {
       console.error('[CompanyDetails] Error loading company data:', err);
       setError(err.response?.data?.message || 'Failed to load company details. Please try again.');
@@ -148,7 +200,8 @@ export default function CompanyDetails() {
     }
   };
 
-  const companyName = company?.name || (getCompanyIdFromHash().charAt(0).toUpperCase() + getCompanyIdFromHash().slice(1));
+  const rawHashId = getCompanyIdFromHash();
+  const companyName = company?.name || (!isMongoId(rawHashId) && rawHashId ? (rawHashId.charAt(0).toUpperCase() + rawHashId.slice(1)) : '');
   const ratingVal = company?.rating != null ? Number(company.rating).toFixed(1) : '0.0';
   const totalRatingStr = company?.totalRating ? ` (${company.totalRating})` : '';
 
@@ -165,7 +218,7 @@ export default function CompanyDetails() {
     { id: 'Salaries', label: `Salaries (${company?.salaries ?? 0})` }
   ];
 
-  if (!loading && (!company || error)) {
+  if (!loading && (!company && !companyName) && error) {
     return (
       <NotFound
         code={error ? '500' : '404'}
@@ -185,11 +238,15 @@ export default function CompanyDetails() {
         <div className="flex items-center gap-2 text-xs font-bold text-theme-muted">
           <a href="#/companies" className="hover:text-theme-text transition-colors">Companies</a>
           <iconify-icon icon="lucide:chevron-right"></iconify-icon>
-          <span className="text-theme-muted">{companyName}</span>
+          {companyName ? (
+            <span className="text-theme-muted">{companyName}</span>
+          ) : (
+            <span className="inline-block w-24 h-3.5 rounded bg-theme-hover skeleton-shimmer"></span>
+          )}
         </div>
 
         {/* Error State */}
-        {error ? (
+        {error && !company ? (
           <div className="flex flex-col items-center justify-center py-16 px-4 text-center border border-dashed border-red-500/20 rounded-sm gap-3">
             <iconify-icon icon="lucide:alert-circle" className="text-4xl text-red-500 mb-2"></iconify-icon>
             <h3 className="display-font text-2xl text-red-500">Something went wrong</h3>
@@ -204,65 +261,91 @@ export default function CompanyDetails() {
         ) : (
           <>
             {/* Company Header Card */}
-            <div className="premium-card flex flex-col gap-8 relative overflow-hidden">
-              <div className="flex flex-col md:flex-row gap-6 md:items-start justify-between relative z-10">
-                <div className="flex items-start gap-5">
-                  <CompanyLogo 
-                    company={company}
-                    logoUrl={company?.logoUrl} 
-                    name={companyName} 
-                    className="premium-logo-box w-20 h-20"
-                    iconClassName="text-5xl"
-                  />
-                  <div className="flex flex-col gap-2">
-                    <div className="flex items-center gap-3">
-                      <h1 className="display-font text-4xl">{companyName}</h1>
-                      <span className="flex items-center gap-1 px-2 py-0.5 rounded bg-theme-hover text-xs font-bold text-yellow-500">
-                        <iconify-icon icon="lucide:star" className="fill-current"></iconify-icon> {ratingVal}{totalRatingStr}
-                      </span>
+            {loading && !company ? (
+              <div className="premium-card flex flex-col gap-8 relative overflow-hidden">
+                <div className="flex flex-col md:flex-row gap-6 md:items-start justify-between relative z-10">
+                  <div className="flex items-start gap-5">
+                    <div className="w-20 h-20 rounded-sm bg-theme-hover skeleton-shimmer flex-shrink-0"></div>
+                    <div className="flex flex-col gap-3">
+                      <div className="w-52 h-8 rounded bg-theme-hover skeleton-shimmer"></div>
+                      <div className="w-80 max-w-full h-4 rounded bg-theme-hover skeleton-shimmer"></div>
+                      <div className="w-48 max-w-full h-3 rounded bg-theme-hover skeleton-shimmer"></div>
                     </div>
-                    {company?.description && (
-                      <p className="text-theme-muted text-sm max-w-xl leading-relaxed">
-                        {company.description}
-                      </p>
-                    )}
-                    {positivesText && (
-                      <div className="flex items-center gap-2 text-xs font-medium text-emerald-500/90 mt-1">
-                        <iconify-icon icon="lucide:thumbs-up" className="text-xs"></iconify-icon>
-                        <span>{positivesText}</span>
+                  </div>
+                  <div className="w-28 h-10 rounded-sm bg-theme-hover skeleton-shimmer flex-shrink-0"></div>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4 relative z-10 border-t border-theme-border pt-8">
+                  {[1, 2, 3, 4, 5].map((i) => (
+                    <div key={i} className="flex flex-col gap-2">
+                      <div className="w-16 h-3 rounded bg-theme-hover skeleton-shimmer"></div>
+                      <div className="w-10 h-4 rounded bg-theme-hover skeleton-shimmer"></div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="premium-card flex flex-col gap-8 relative overflow-hidden">
+                <div className="flex flex-col md:flex-row gap-6 md:items-start justify-between relative z-10">
+                  <div className="flex items-start gap-5">
+                    <CompanyLogo 
+                      company={company}
+                      logoUrl={company?.logoUrl} 
+                      name={companyName || 'Company'} 
+                      className="premium-logo-box w-20 h-20"
+                      iconClassName="text-5xl"
+                    />
+                    <div className="flex flex-col gap-2">
+                      <div className="flex items-center gap-3">
+                        <h1 className="display-font text-4xl">{companyName || 'Company'}</h1>
+                        {company?.rating != null && (
+                          <span className="flex items-center gap-1 px-2 py-0.5 rounded bg-theme-hover text-xs font-bold text-yellow-500">
+                            <iconify-icon icon="lucide:star" className="fill-current"></iconify-icon> {ratingVal}{totalRatingStr}
+                          </span>
+                        )}
                       </div>
-                    )}
+                      {company?.description && (
+                        <p className="text-theme-muted text-sm max-w-xl leading-relaxed">
+                          {company.description}
+                        </p>
+                      )}
+                      {positivesText && (
+                        <div className="flex items-center gap-2 text-xs font-medium text-emerald-500/90 mt-1">
+                          <iconify-icon icon="lucide:thumbs-up" className="text-xs"></iconify-icon>
+                          <span>{positivesText}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <button className="btn-primary px-6 py-2.5 rounded-sm flex items-center justify-center gap-2 flex-shrink-0 cursor-pointer">
+                    <iconify-icon icon="lucide:plus"></iconify-icon> Follow
+                  </button>
+                </div>
+
+                {/* Statistics Cards */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4 relative z-10 border-t border-theme-border pt-8">
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[10px] text-theme-muted font-bold uppercase tracking-wider">Interviews</span>
+                    <span className="font-bold text-sm">{company?.interviews ?? company?.exp ?? experiences.length}</span>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[10px] text-theme-muted font-bold uppercase tracking-wider">Jobs</span>
+                    <span className="font-bold text-sm">{company?.jobs ?? 0}</span>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[10px] text-theme-muted font-bold uppercase tracking-wider">Reviews</span>
+                    <span className="font-bold text-sm">{company?.reviews ?? 0}</span>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[10px] text-theme-muted font-bold uppercase tracking-wider">Salaries</span>
+                    <span className="font-bold text-sm">{company?.salaries ?? 0}</span>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[10px] text-theme-muted font-bold uppercase tracking-wider">Benefits</span>
+                    <span className="font-bold text-sm">{company?.benefits ?? 0}</span>
                   </div>
                 </div>
-                <button className="btn-primary px-6 py-2.5 rounded-sm flex items-center justify-center gap-2 flex-shrink-0 cursor-pointer">
-                  <iconify-icon icon="lucide:plus"></iconify-icon> Follow
-                </button>
               </div>
-
-              {/* Statistics Cards */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4 relative z-10 border-t border-theme-border pt-8">
-                <div className="flex flex-col gap-1">
-                  <span className="text-[10px] text-theme-muted font-bold uppercase tracking-wider">Interviews</span>
-                  <span className="font-bold text-sm">{company?.interviews ?? company?.exp ?? experiences.length}</span>
-                </div>
-                <div className="flex flex-col gap-1">
-                  <span className="text-[10px] text-theme-muted font-bold uppercase tracking-wider">Jobs</span>
-                  <span className="font-bold text-sm">{company?.jobs ?? 0}</span>
-                </div>
-                <div className="flex flex-col gap-1">
-                  <span className="text-[10px] text-theme-muted font-bold uppercase tracking-wider">Reviews</span>
-                  <span className="font-bold text-sm">{company?.reviews ?? 0}</span>
-                </div>
-                <div className="flex flex-col gap-1">
-                  <span className="text-[10px] text-theme-muted font-bold uppercase tracking-wider">Salaries</span>
-                  <span className="font-bold text-sm">{company?.salaries ?? 0}</span>
-                </div>
-                <div className="flex flex-col gap-1">
-                  <span className="text-[10px] text-theme-muted font-bold uppercase tracking-wider">Benefits</span>
-                  <span className="font-bold text-sm">{company?.benefits ?? 0}</span>
-                </div>
-              </div>
-            </div>
+            )}
 
             {/* Interactive Navigation Subtabs */}
             <div className="flex items-center gap-8 border-b border-theme-border overflow-x-auto">
@@ -304,7 +387,7 @@ export default function CompanyDetails() {
                 <div className="flex flex-col items-center justify-center py-16 px-4 text-center border border-dashed border-theme-border rounded-sm gap-3">
                   <iconify-icon icon="lucide:file-text" className="text-4xl text-theme-muted mb-2"></iconify-icon>
                   <h3 className="display-font text-2xl text-theme-text">No experiences available</h3>
-                  <p className="text-sm text-theme-muted">No interview experiences available for {companyName}.</p>
+                  <p className="text-sm text-theme-muted">No interview experiences available for {companyName || 'this company'}.</p>
                 </div>
               ) : (
                 <div className="row-list-container">

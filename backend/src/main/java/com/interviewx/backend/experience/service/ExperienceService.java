@@ -140,7 +140,7 @@ public class ExperienceService {
     ) {
 
         Company company = companyRepository.findById(experience.getCompanyId())
-                .orElseThrow(() -> new ResourceNotFoundException("Company not found"));
+                .orElse(null);
 
         ExperienceResponse response = new ExperienceResponse();
         CompanyResponse companyResponse = new CompanyResponse();
@@ -149,10 +149,12 @@ public class ExperienceService {
         response.setTitle(experience.getTitle());
         response.setOverallExperience(experience.getOverallExperience());
 
-        companyResponse.setId(company.getId());
-        companyResponse.setName(company.getName());
-        companyResponse.setLogoUrl(company.getLogoUrl());
-        companyResponse.setRating(company.getRating());
+        if (company != null) {
+            companyResponse.setId(company.getId());
+            companyResponse.setName(company.getName());
+            companyResponse.setLogoUrl(company.getLogoUrl());
+            companyResponse.setRating(company.getRating());
+        }
 
         response.setCompany(companyResponse);
 
@@ -198,6 +200,12 @@ public class ExperienceService {
         );
 
         return response;
+    }
+
+    public List<ExperienceResponse> getMyExperiences() {
+        User currentUser = getCurrentUser();
+        List<Experience> experiences = experienceRepository.findByUserIdOrderByCreatedAtDesc(currentUser.getId());
+        return experiences.stream().map(exp -> mapToResponse(exp, currentUser.getId())).toList();
     }
 
     public Page<ExperienceResponse> getExperiencesByCompany(String companyId,
@@ -277,13 +285,15 @@ public class ExperienceService {
     }
 
     private String getCurrentUserId() {
-
-        String email = SecurityContextHolder.getContext()
-                .getAuthentication()
-                .getName();
-
-        return userRepository.findByEmail(email)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"))
-                .getId();
+        try {
+            var auth = SecurityContextHolder.getContext().getAuthentication();
+            if (auth == null || !auth.isAuthenticated() || "anonymousUser".equals(auth.getPrincipal())) {
+                return null;
+            }
+            String email = auth.getName();
+            return userRepository.findByEmail(email).map(User::getId).orElse(null);
+        } catch (Exception e) {
+            return null;
+        }
     }
 }

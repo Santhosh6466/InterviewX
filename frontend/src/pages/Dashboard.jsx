@@ -287,7 +287,8 @@ export default function Dashboard() {
               <div className="row-list-container">
                 {experiences.map((exp, i) => {
                   const expId = exp.id || exp._id || i + 1;
-                  const companyName = exp.company?.name || exp.companyName || exp.company || 'Company';
+                  const isMongoId = (str) => typeof str === 'string' && /^[0-9a-fA-F]{24}$/.test(str);
+                  const companyName = exp.company?.name || exp.companyName || (typeof exp.company === 'string' && !isMongoId(exp.company) ? exp.company : null) || 'Company';
                   const companyIcon = exp.company?.logoUrl ? null : (exp.icon || 'google');
                   const roleName = exp.role || exp.title || 'Software Engineer';
                   const dateStr = exp.interviewDate || exp.date || 'Recent';

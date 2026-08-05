@@ -14,6 +14,7 @@ import LikeButton from '../components/LikeButton';
 import BookmarkButton from '../components/BookmarkButton';
 import ExperienceRow from '../components/ExperienceRow';
 import EmptyState from '../components/EmptyState';
+import requestCache from '../services/cache';
 
 const DEFAULT_EXPERIENCES = [
   {
@@ -40,130 +41,99 @@ const DEFAULT_EXPERIENCES = [
 
 export default function Profile({ sidebarTab = 'Profile' }) {
   const { user } = useAuth();
-  const [experiences, setExperiences] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [profileData, setProfileData] = useState(null);
-  const [loadingProfile, setLoadingProfile] = useState(true);
+  const [experiences, setExperiences] = useState(() => {
+    const cached = requestCache.get('user_my_experiences');
+    return Array.isArray(cached) ? cached : [];
+  });
+  const [loading, setLoading] = useState(() => {
+    return !requestCache.get('user_my_experiences');
+  });
+  const [profileData, setProfileData] = useState(() => {
+    return requestCache.get('user_profile_data') || null;
+  });
+  const [loadingProfile, setLoadingProfile] = useState(() => {
+    return !requestCache.get('user_profile_data');
+  });
   const [activeTab, setActiveTab] = useState('My Experiences');
-  const [bookmarks, setBookmarks] = useState([]);
-  const [loadingBookmarks, setLoadingBookmarks] = useState(true);
+  const [bookmarks, setBookmarks] = useState(() => {
+    const cached = requestCache.get('user_profile_bookmarks');
+    return Array.isArray(cached) ? cached : [];
+  });
+  const [loadingBookmarks, setLoadingBookmarks] = useState(() => {
+    return !requestCache.get('user_profile_bookmarks');
+  });
   
   // Deletion modal state
   const [selectedDeleteId, setSelectedDeleteId] = useState(null);
   const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
-    fetchUserExperiences();
-    fetchUserProfile();
-    fetchBookmarks();
+    fetchAllProfileData();
   }, [user]);
 
-  const fetchUserProfile = async () => {
+  const fetchAllProfileData = async () => {
     try {
-      setLoadingProfile(true);
-      const data = await profileService.getProfile();
-      setProfileData(data);
-    } catch (err) {
-      console.warn('[Profile] Error fetching profile data:', err);
-    } finally {
+      const [profileResult, experiencesResult, bookmarksResult] = await Promise.allSettled([
+        profileService.getProfile(),
+        experienceService.getUserExperiences(),
+        experienceService.getMyBookmarks()
+      ]);
+
+      // 1. Process Profile
+      if (profileResult.status === 'fulfilled' && profileResult.value) {
+        setProfileData(profileResult.value);
+        requestCache.set('user_profile_data', profileResult.value, 180000);
+      }
       setLoadingProfile(false);
-    }
-  };
 
-  const fetchBookmarks = async () => {
-    try {
-      setLoadingBookmarks(true);
-      const res = await experienceService.getMyBookmarks();
-      const rawBookmarks = Array.isArray(res) ? res : [];
-      const resolvedExperiences = [];
+      // 2. Process Bookmarks
+      let bookmarkIds = new Set();
+      let rawBookmarks = [];
+      if (bookmarksResult.status === 'fulfilled' && Array.isArray(bookmarksResult.value)) {
+        rawBookmarks = bookmarksResult.value;
+        bookmarkIds = new Set(rawBookmarks.map(b => String(b.experienceId || b.id)));
+        setBookmarks(rawBookmarks);
+        requestCache.set('user_profile_bookmarks', rawBookmarks, 180000);
+      }
+      setLoadingBookmarks(false);
 
-      if (rawBookmarks.length > 0) {
-        const sample = rawBookmarks[0];
+      // 3. Process Experiences
+      if (experiencesResult.status === 'fulfilled') {
+        const data = experiencesResult.value;
+        const list = Array.isArray(data) ? data : (data?.content || data?.experiences || []);
 
-        if (sample.company || sample.companyName || sample.role || sample.title) {
-          resolvedExperiences.push(...rawBookmarks.map(item => ({ ...item, bookmarked: true })));
-        } else if (sample.experience) {
-          resolvedExperiences.push(...rawBookmarks.map(item => ({
-            ...item.experience,
-            bookmarkId: item.id,
-            bookmarked: true
-          })));
-        } else if (sample.experienceId) {
-          const fetchPromises = rawBookmarks.map(async (b) => {
-            try {
-              const exp = await experienceService.getExperienceById(b.experienceId);
-              return { ...exp, bookmarkId: b.id, bookmarked: true };
-            } catch (err) {
-              console.warn(`Failed to fetch experience details for bookmark ${b.id}:`, err);
-              return null;
-            }
+        if (user) {
+          const userIdStr = String(user.id || user._id || '').toLowerCase();
+          const userEmailStr = String(user.email || '').toLowerCase();
+          const userNameStr = String(user.name || user.username || '').toLowerCase();
+
+          const myExperiences = list.filter(exp => {
+            const expUserId = String(exp.userId || exp.user?.id || exp.user?._id || exp.authorId || '').toLowerCase();
+            const expEmail = String(exp.userEmail || exp.user?.email || exp.email || '').toLowerCase();
+            const expAuthor = String(exp.authorName || exp.userName || exp.user?.name || exp.createdByName || '').toLowerCase();
+
+            return (
+              (userIdStr && expUserId && expUserId === userIdStr) ||
+              (userEmailStr && expEmail && expEmail === userEmailStr) ||
+              (userNameStr && expAuthor && expAuthor === userNameStr)
+            );
           });
-          const results = await Promise.all(fetchPromises);
-          resolvedExperiences.push(...results.filter(Boolean));
+
+          const processedMyExps = myExperiences.map(exp => ({
+            ...exp,
+            bookmarked: bookmarkIds.has(String(exp.id || exp._id))
+          }));
+
+          setExperiences(processedMyExps);
+          requestCache.set('user_my_experiences', processedMyExps, 180000);
         }
       }
-
-      setBookmarks(resolvedExperiences);
-    } catch (err) {
-      console.warn('[Profile] Error fetching bookmarks:', err);
-    } finally {
-      setLoadingBookmarks(false);
-    }
-  };
-
-  const fetchUserExperiences = async () => {
-    try {
-      setLoading(true);
-      
-      let bookmarkIds = new Set();
-      try {
-        const bookmarksRes = await experienceService.getMyBookmarks();
-        const bList = Array.isArray(bookmarksRes) ? bookmarksRes : [];
-        bookmarkIds = new Set(bList.map(b => String(b.experienceId || b.id)));
-      } catch (bookmarkErr) {
-        console.warn('[Profile] Error fetching bookmarks for experiences match:', bookmarkErr);
-      }
-
-      let data;
-      try {
-        data = await experienceService.getUserExperiences(user?.id);
-      } catch {
-        data = await experienceService.getAllExperiences(0, 100);
-      }
-      
-      const list = Array.isArray(data) ? data : (data?.content || data?.experiences || []);
-      
-      if (user) {
-        const userIdStr = String(user.id || user._id || '').toLowerCase();
-        const userEmailStr = String(user.email || '').toLowerCase();
-        const userNameStr = String(user.name || user.username || '').toLowerCase();
-
-        const myExperiences = list.filter(exp => {
-          const expUserId = String(exp.userId || exp.user?.id || exp.user?._id || exp.authorId || '').toLowerCase();
-          const expEmail = String(exp.userEmail || exp.user?.email || exp.email || '').toLowerCase();
-          const expAuthor = String(exp.authorName || exp.userName || exp.user?.name || exp.createdByName || '').toLowerCase();
-
-          return (
-            (userIdStr && expUserId && expUserId === userIdStr) ||
-            (userEmailStr && expEmail && expEmail === userEmailStr) ||
-            (userNameStr && expAuthor && expAuthor === userNameStr)
-          );
-        });
-
-        const processedMyExps = myExperiences.map(exp => ({
-          ...exp,
-          bookmarked: bookmarkIds.has(String(exp.id || exp._id))
-        }));
-
-        setExperiences(processedMyExps);
-      } else {
-        setExperiences([]);
-      }
-    } catch (err) {
-      console.warn('[Profile] Error fetching user experiences:', err);
-      setExperiences([]);
-    } finally {
       setLoading(false);
+    } catch (err) {
+      console.warn('[Profile] Error in parallel fetchAllProfileData:', err);
+      setLoading(false);
+      setLoadingProfile(false);
+      setLoadingBookmarks(false);
     }
   };
 

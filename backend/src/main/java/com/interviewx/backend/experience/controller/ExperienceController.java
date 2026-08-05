@@ -33,6 +33,11 @@ public class ExperienceController {
         return experienceService.createExperience(request);
     }
 
+    @GetMapping("/my")
+    public java.util.List<ExperienceResponse> getMyExperiences() {
+        return experienceService.getMyExperiences();
+    }
+
     @GetMapping("/{experienceId}")
     public ExperienceResponse getExperienceById(
             @PathVariable String experienceId) {
