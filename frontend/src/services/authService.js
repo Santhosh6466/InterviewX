@@ -1,0 +1,25 @@
+import api from './api';
+
+export const authService = {
+  async register(name, email, password) {
+    const response = await api.post('/auth/register', { name, email, password });
+    return response.data;
+  },
+
+  async login(email, password) {
+    const response = await api.post('/auth/login', { email, password });
+    return response.data;
+  },
+
+  async sendOtp(email) {
+    const response = await api.post('/auth/send-otp', { email });
+    return response.data;
+  },
+
+  async verifyOtp(email, otp) {
+    const response = await api.post('/auth/verify-otp', { email, otp });
+    return response.data;
+  }
+};
+
+export default authService;

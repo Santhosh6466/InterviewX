@@ -1,0 +1,343 @@
+@import url('https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@700&f[]=satoshi@300,400,500,700&display=swap');
+
+@import "tailwindcss";
+
+@theme {
+  --color-theme-main: var(--theme-main);
+  --color-theme-card: var(--theme-card);
+  --color-theme-sidebar: var(--theme-sidebar);
+  --color-theme-text: var(--theme-text);
+  --color-theme-muted: var(--theme-muted);
+  --color-theme-border: var(--theme-border);
+  --color-theme-hover: var(--theme-hover);
+  --color-theme-inverted: var(--theme-inverted);
+  --color-theme-inverted-text: var(--theme-inverted-text);
+  --color-theme-border-inverted: var(--theme-border-inverted);
+  --color-theme-primary: var(--theme-inverted);
+  --color-theme-primary-text: var(--theme-inverted-text);
+
+  --color-terracotta-50: #f9f6f0;
+  --color-terracotta-100: #f0e8dc;
+  --color-terracotta-200: #e2d1bc;
+  --color-terracotta-400: #c4ab91;
+  --color-terracotta-500: #a78b71;
+  --color-terracotta-600: #8e7259;
+  --color-terracotta-700: #6e5641;
+  
+  --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.04);
+  --shadow-hover: 0 8px 24px rgba(0, 0, 0, 0.08);
+  
+  --radius-sm: 2px;
+}
+
+@layer base {
+  /* Aesthetic Warm Light Mode Palette */
+  :root {
+    --theme-main: #f5f2ec;
+    --theme-sidebar: #faf8f5;
+    --theme-card: #ffffff;
+    --theme-text: #0f0f0f;
+    --theme-muted: #52525b;
+    --theme-border: rgba(0, 0, 0, 0.08);
+    --theme-hover: rgba(167, 139, 113, 0.08);
+    --theme-inverted: #a78b71;
+    --theme-inverted-text: #1c1917;
+    --theme-border-inverted: rgba(167, 139, 113, 0.2);
+
+    /* Gold / Terracotta Accent Palette */
+    --gold-base: #a78b71;
+    --gold-light: #c9b8a0;
+    --gold-hover: #8e7259;
+  }
+
+  /* Sleek Dark Mode Palette */
+  .dark {
+    --theme-main: #0a0a0a;
+    --theme-sidebar: #0a0a0a;
+    --theme-card: #121212;
+    --theme-text: #f4f4f5;
+    --theme-muted: #a1a1aa;
+    --theme-border: rgba(255, 255, 255, 0.1);
+    --theme-hover: rgba(255, 255, 255, 0.05);
+    --theme-inverted: #a78b71;
+    --theme-inverted-text: #0a0a0a;
+    --theme-border-inverted: rgba(167, 139, 113, 0.2);
+
+    /* Gold Accent Palette */
+    --gold-base: #a78b71;
+    --gold-light: #c9b8a0;
+    --gold-hover: #e8d5b7;
+  }
+
+  body {
+    background-color: var(--theme-main);
+    color: var(--theme-text);
+    transition-property: color, background-color, border-color, text-decoration-color, fill, stroke;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    transition-duration: 300ms;
+    font-family: 'Satoshi', sans-serif;
+    margin: 0;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    html {
+      scroll-behavior: smooth;
+    }
+  }
+}
+
+@layer components {
+  .display-font {
+  font-family: 'Cabinet Grotesk', sans-serif;
+  letter-spacing: -0.03em;
+}
+
+.minimal-glass {
+  background: rgba(255, 255, 255, 0.4);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(167, 139, 113, 0.15);
+}
+
+.dark .minimal-glass {
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Systemic Interaction States */
+.hover-lift {
+  transition: all 200ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.hover-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+  border-color: rgba(167, 139, 113, 0.4);
+}
+
+.dark .hover-lift:hover {
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+  border-color: rgba(167, 139, 113, 0.4);
+}
+
+/* Typography Tokens */
+.h1-page-title {
+  @apply text-3xl font-bold tracking-tight text-theme-text;
+  font-family: 'Cabinet Grotesk', sans-serif;
+  letter-spacing: -0.03em;
+}
+
+.h2-section-title {
+  @apply text-lg font-bold text-theme-text;
+  font-family: 'Cabinet Grotesk', sans-serif;
+  letter-spacing: -0.03em;
+}
+
+.h3-card-title {
+  @apply text-base font-bold text-theme-text;
+}
+
+/* Button Tokens */
+.btn-primary {
+  @apply bg-theme-primary text-theme-primary-text font-bold rounded-sm px-4 py-2 inline-flex items-center justify-center gap-2 transition-all;
+}
+.btn-primary:hover {
+  background: var(--gold-hover);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+  border-color: rgba(167, 139, 113, 0.4);
+}
+
+.btn-secondary {
+  @apply bg-transparent border border-theme-border text-theme-text font-bold rounded-sm px-4 py-2 inline-flex items-center justify-center gap-2 transition-colors cursor-pointer;
+}
+.btn-secondary:hover {
+  @apply bg-theme-hover;
+}
+
+.btn-destructive {
+  @apply bg-transparent text-rose-500 font-bold rounded-sm px-4 py-2 inline-flex items-center justify-center gap-2 transition-colors cursor-pointer;
+}
+.btn-destructive:hover {
+  @apply bg-rose-500/10;
+}
+
+/* Premium Card Utilities */
+.premium-card {
+  @apply bg-theme-card border border-theme-border rounded-sm shadow-card p-6 transition-all;
+}
+
+.dark .premium-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.premium-card:hover {
+  @apply shadow-hover;
+  transform: translateY(-2px);
+  border-color: rgba(167, 139, 113, 0.4);
+}
+
+.dark .premium-card:hover {
+  border-color: rgba(167, 139, 113, 0.4);
+}
+/* Form Tokens */
+.input-field {
+  @apply w-full bg-theme-card border border-theme-border rounded-sm py-2 px-3 text-sm text-theme-text transition-colors;
+}
+.input-field:focus {
+  @apply outline-none border-theme-primary;
+}
+.input-field::placeholder {
+  @apply text-theme-muted;
+}
+
+.premium-logo-box {
+  background: rgba(0, 0, 0, 0.04);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.dark .premium-logo-box {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.premium-rating-badge {
+  background: rgba(0, 0, 0, 0.05);
+  padding: 4px 8px;
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.dark .premium-rating-badge {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.gold-text-link {
+  color: var(--gold-base);
+  transition: color 0.2s ease;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.gold-text-link:hover {
+  color: var(--gold-hover);
+}
+
+.tag-pill {
+  background: #ece7dd;
+  color: #3a3a3a;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.dark .tag-pill {
+  background: rgba(255, 255, 255, 0.08);
+  color: #d4d4d8;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Row List Structure Utilities */
+.row-list-container {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--theme-border);
+  border-bottom: 1px solid var(--theme-border);
+}
+
+.row-list-container > * + * {
+  border-top: 1px solid var(--theme-border);
+}
+
+.row-list-item {
+  padding: 20px 16px;
+  background: transparent;
+  transition: all 0.2s ease;
+}
+
+.row-list-item:hover {
+  background: var(--theme-hover);
+}
+
+.row-list-item-condensed {
+  padding: 12px 16px;
+  background: transparent;
+  transition: all 0.2s ease;
+}
+
+.row-list-item-condensed:hover {
+  background: var(--theme-hover);
+}
+
+/* Apple-style Scroll Reveal Utilities */
+.reveal-on-scroll {
+  opacity: 0;
+  transform: translateY(40px);
+  will-change: opacity, transform;
+  transition: opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1), transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.reveal-on-scroll.in-view {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.reveal-scale {
+  opacity: 0;
+  transform: scale(0.92) translateY(20px);
+  will-change: opacity, transform;
+  transition: opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1), transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.reveal-scale.in-view {
+  opacity: 1;
+  transform: scale(1) translateY(0);
+}
+
+/* Smooth Infinite Marquee */
+@keyframes marquee-left {
+  0% {
+    transform: translate3d(0, 0, 0);
+  }
+  100% {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+@keyframes marquee-right {
+  0% {
+    transform: translate3d(-50%, 0, 0);
+  }
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.animate-marquee-left {
+  display: flex;
+  width: max-content;
+  animation: marquee-left 40s linear infinite;
+  will-change: transform;
+}
+
+.animate-marquee-right {
+  display: flex;
+  width: max-content;
+  animation: marquee-right 40s linear infinite;
+  will-change: transform;
+}
+
+.animate-marquee-left:hover,
+.animate-marquee-right:hover {
+  animation-play-state: paused;
+}
+
+}
+
