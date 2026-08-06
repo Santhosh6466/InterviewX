@@ -18,6 +18,10 @@ const getApiBaseUrl = () => {
     const host = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'localhost' : window.location.hostname;
     return `http://${host}:8080`;
   }
+  // When running on Vercel deployment, use relative proxy routing so Vercel edge routes to Railway seamlessly
+  if (typeof window !== 'undefined' && window.location.hostname.endsWith('vercel.app')) {
+    return '';
+  }
   let baseUrl = import.meta.env.VITE_API_BASE_URL;
   if (baseUrl && typeof baseUrl === 'string' && baseUrl.trim() !== '') {
     let cleanUrl = baseUrl.trim().replace(/\/+$/, '');

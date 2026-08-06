@@ -11,6 +11,38 @@
       "destination": "https://interviewx-project.up.railway.app/api/:path*"
     },
     {
+      "source": "/profile/:path*",
+      "destination": "https://interviewx-project.up.railway.app/profile/:path*"
+    },
+    {
+      "source": "/profile",
+      "destination": "https://interviewx-project.up.railway.app/profile"
+    },
+    {
+      "source": "/experiences/:path*",
+      "destination": "https://interviewx-project.up.railway.app/experiences/:path*"
+    },
+    {
+      "source": "/experiences",
+      "destination": "https://interviewx-project.up.railway.app/experiences"
+    },
+    {
+      "source": "/users/:path*",
+      "destination": "https://interviewx-project.up.railway.app/users/:path*"
+    },
+    {
+      "source": "/comments/:path*",
+      "destination": "https://interviewx-project.up.railway.app/comments/:path*"
+    },
+    {
+      "source": "/reply/:path*",
+      "destination": "https://interviewx-project.up.railway.app/reply/:path*"
+    },
+    {
+      "source": "/reply",
+      "destination": "https://interviewx-project.up.railway.app/reply"
+    },
+    {
       "source": "/health",
       "destination": "https://interviewx-project.up.railway.app/health"
     },
