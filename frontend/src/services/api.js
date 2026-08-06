@@ -22,7 +22,7 @@ const getApiBaseUrl = () => {
   if (baseUrl && typeof baseUrl === 'string' && baseUrl.trim() !== '') {
     return baseUrl.trim().replace(/\/+$/, '');
   }
-  return 'https://interviewx.up.railway.app';
+  return 'https://humorous-essence-production-eb53.up.railway.app';
 };
 
 export const API_BASE_URL = getApiBaseUrl();
