@@ -15,7 +15,11 @@ frontend/.env.local
 
 # Environment
 .env
+.env.local
 *.env
+!*.env.production
+!.env.production
+!frontend/.env.production
 
 # OS
 .DS_Store
