@@ -20,9 +20,13 @@ const getApiBaseUrl = () => {
   }
   let baseUrl = import.meta.env.VITE_API_BASE_URL;
   if (baseUrl && typeof baseUrl === 'string' && baseUrl.trim() !== '') {
-    return baseUrl.trim().replace(/\/+$/, '');
+    let cleanUrl = baseUrl.trim().replace(/\/+$/, '');
+    if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
+      cleanUrl = `https://${cleanUrl}`;
+    }
+    return cleanUrl;
   }
-  return 'https://humorous-essence-production-eb53.up.railway.app';
+  return 'https://interviewx-project.up.railway.app';
 };
 
 export const API_BASE_URL = getApiBaseUrl();
