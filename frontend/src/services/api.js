@@ -18,13 +18,17 @@ const getApiBaseUrl = () => {
     const host = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'localhost' : window.location.hostname;
     return `http://${host}:8080`;
   }
-  if (import.meta.env.VITE_API_BASE_URL) {
-    return import.meta.env.VITE_API_BASE_URL;
+  let baseUrl = import.meta.env.VITE_API_BASE_URL;
+  if (baseUrl && typeof baseUrl === 'string' && baseUrl.trim() !== '') {
+    return baseUrl.trim().replace(/\/+$/, '');
   }
   return 'https://interviewx.up.railway.app';
 };
 
 export const API_BASE_URL = getApiBaseUrl();
+if (typeof window !== 'undefined') {
+  console.log('[InterviewX API] Connected to Backend URL:', API_BASE_URL);
+}
 
 // Retrieve default Axios adapter
 const defaultAdapter = axios.getAdapter(axios.defaults.adapter || ['xhr', 'http', 'fetch']);
